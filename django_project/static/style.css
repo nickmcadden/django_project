@@ -1,0 +1,60 @@
+h1 {
+    text-align: center;
+}
+
+
+body {
+	background-color:  #f4f4f4;
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+/* Container (could be body or another wrapper element) */
+.container {
+	width: 100%;
+    justify-content: center; /* Center child elements horizontally */
+}
+
+/* Container (could be body or another wrapper element) */
+.fixed-width { 
+	background-color: #ffffff;
+	margin: 0 auto;
+	width: 1200px;
+}
+
+/* Container for charts on the right, also taking up half the width */
+.charts-container {
+	float: left;
+	align: "right";
+    width: 60%; /* takes up half of the container's width */
+}
+
+.data {
+	float: left;
+	width: 40%;
+}
+
+/* Each chart inside the charts container */
+.chart {
+}
+
+.data-table {
+	background-color: #ffffff;
+    border-collapse: collapse;
+}
+
+.data-table, .data-table th, .data-table td {
+    border: 1px solid #ddd;
+	font-size: 10px;
+}
+
+.data-table th, .data-table td {
+    padding: 4px 4px;
+    text-align: left;
+}
+
+.data-table tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+

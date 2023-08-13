@@ -1,0 +1,27 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="{% static 'style.css' %}" rel="stylesheet">
+    <title>Wind Power Forecast</title>
+</head>
+<body>
+    <h1>Daily Wind Power Forecast (MW)</h1>
+    
+	<!-- Wrapper for the page -->
+	<div class="container">
+		<div class="fixed-width">
+    		<!-- Display the DataFrame as a table -->
+    		<div class="charts-container">
+    			<!-- Display the chart -->
+   	 			<div class="chart">{{ today_chart|safe }}</div>
+				<!-- Display the chart -->
+   	 			<div class="chart">{{ daily_chart|safe }}</div>
+			</div>
+			<div class="data">{{ forecast_data|safe }}</div>
+		</div>
+	</div>
+</body>
+</html>
