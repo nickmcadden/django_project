@@ -15,10 +15,12 @@
 		<div class="fixed-width">
     		<!-- Display the DataFrame as a table -->
     		<div class="charts-container">
-    			<!-- Display the chart -->
-   	 			<div class="chart">{{ today_chart|safe }}</div>
 				<!-- Display the chart -->
-   	 			<div class="chart">{{ daily_chart|safe }}</div>
+   	 			<div class="chart">{{ today_wind_actual|safe }}</div>
+    			<!-- Display the chart -->
+   	 			<div class="chart">{{ today_wind_forecast|safe }}</div>
+				<!-- Display the chart -->
+   	 			<div class="chart">{{ model_training|safe }}</div>
 			</div>
 			<div class="data">{{ forecast_data|safe }}</div>
 		</div>

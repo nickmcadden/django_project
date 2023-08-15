@@ -18,6 +18,7 @@ body {
 
 /* Container (could be body or another wrapper element) */
 .fixed-width { 
+	overflow:hidden;
 	background-color: #ffffff;
 	margin: 0 auto;
 	width: 1200px;
@@ -31,6 +32,7 @@ body {
 }
 
 .data {
+	margin: 40px 0px 40px 0px;
 	float: left;
 	width: 40%;
 }

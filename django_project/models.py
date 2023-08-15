@@ -104,11 +104,11 @@ def create_forecast(forecast_data):
     for j, model in enumerate([model_a, model_b, model_c]):
         # Make a prediction on the forecast data with each model
         X = create_features(forecast_data, model)
-        forecast['Forecast_Prediction_' + str(j)] = np.clip(model.predict(X) ,1000 , 16000)
+        forecast['Forecast_' + str(j)] = np.clip(model.predict(X) ,1000 , 16000)
 
     # Create Ensemble Forecast (Currently XGBoost results can't be improved with other model combination)
-    forecast['Forecast_Ensemble'] = forecast['Forecast_Prediction_0'] * 0.4 + \
-                                    forecast['Forecast_Prediction_1'] * 0.4 + \
-                                    forecast['Forecast_Prediction_2'] * 0.2
+    forecast['Forecast_Ensemble'] = forecast['Forecast_0'] * 0.4 + \
+                                    forecast['Forecast_1'] * 0.4 + \
+                                    forecast['Forecast_2'] * 0.2
 
     return training_prediction, forecast
