@@ -3,8 +3,9 @@ import numpy as np
 import requests as requests
 import os
 import pickle as pkl
-from bs4 import BeautifulSoup
+import lxml
 from django.conf import settings
+from bs4 import BeautifulSoup
 
 
 # Read the historical wind speed data from some locations around the UK
@@ -138,19 +139,23 @@ def merge_power_generation_data(grid_data, ntn_data):
     return data
     
 
-def xml_to_dataframe(xml, id_tag):
-    s = BeautifulSoup(xml, 'xml')
-    items = s.find_all('responseList')[0].find_all('item')
+def xml_to_dataframe(xml, xpath):    
+    root = lxml.etree.fromstring(xml)
+
+    # This XPath specifically targets <item> tags that are direct children of <responseList> tags.
+    items = root.xpath('//responseList/item')
     data = []
 
     for item in items:
         row_data = {}
-        for tag in item.find_all():
-            row_data[tag.name] = tag.text
+        for child in item.getchildren():
+            row_data[child.tag] = child.text
         data.append(row_data)
+    
     data=pd.DataFrame(data)
     data['startTimeOfHalfHrPeriod'] = data['startTimeOfHalfHrPeriod'].astype('datetime64[ns]')
     data['settlementPeriod'] = data['settlementPeriod'].astype(np.int64)
+
     return pd.DataFrame(data)
     
 
@@ -173,7 +178,7 @@ def read_power_generation_data():
         generation_half_hourly_base.to_csv('generation_half_hourly_base.csv')
 
     # Call the external data for the updates to the ntn and grid data
-    ntn_data = xml_to_dataframe(requests.get("https://www.bmreports.com/bmrs/?q=ajax/xml_download/FUELHH/xml/").content, "item")
+    ntn_data = xml_to_dataframe(requests.get("https://www.bmreports.com/bmrs/?q=ajax/xml_download/FUELHH/xml/").content, "//responseList/item")
     grid_data = pd.read_csv("https://data.nationalgrideso.com/backend/dataset/7a12172a-939c-404c-b581-a6128b74f588/resource/177f6fa4-ae49-4182-81ea-0c6b35f26ca6/download/demanddataupdate.csv", parse_dates=['SETTLEMENT_DATE'])
     generation_half_hourly_update = merge_power_generation_data(grid_data, ntn_data)
     generation_half_hourly_update.to_csv('generation_half_hourly_update.csv')
