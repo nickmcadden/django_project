@@ -1,10 +1,12 @@
+from django.conf import settings
 import pandas as pd
 import numpy as np
 import requests as requests
 import os
 import pickle as pkl
 import lxml
-from django.conf import settings
+import plotly.express as px
+import plotly.graph_objects as go
 from bs4 import BeautifulSoup
 
 
@@ -97,7 +99,7 @@ def merge_power_generation_data(grid_data, ntn_data):
     data_mapping_ntn_columns = {'startTimeOfHalfHrPeriod': 'date',
                     'settlementPeriod': 'period',
                     'coal': 'coal',
-                    'ccgt': 'ccgt',
+                    'ccgt': 'gas',
                     'ocgt': 'ocgt',
                     'nuclear': 'nuclear',
                     'oil': 'oil',
@@ -111,7 +113,7 @@ def merge_power_generation_data(grid_data, ntn_data):
     data_mapping_grid_columns = {'SETTLEMENT_DATE': 'date',
                     'SETTLEMENT_PERIOD': 'period',
                     'EMBEDDED_WIND_GENERATION':'embedded_wind',
-                    'EMBEDDED_SOLAR_GENERATION':'embedded_solar',
+                    'EMBEDDED_SOLAR_GENERATION':'solar',
                     'PUMP_STORAGE_PUMPING':'pumped_storage_pumping',
                     'IFA_FLOW': 'ifa',
                     'IFA2_FLOW': 'ifa2',
@@ -191,3 +193,125 @@ def read_power_generation_data():
     pkl.dump(data, open("generation_half_hourly.pickle", "wb"))
     
     return data
+
+
+def plot_sunburst_chart(data, heading):
+    # Map sources to main categories
+    source_to_category_map = {
+                        'coal':'carbon',
+                        'gas':'carbon',
+                        'ocgt':'carbon',
+                        'nuclear':'other',
+                        'oil':'carbon',
+                        'wind':'renewable',
+                        'hydro':'renewable',
+                        'pumped':'other',
+                        'biomass':'other',
+                        'other':'other',
+                        'solar':'renewable',
+                        'pumped_storage_pumping':'other',
+                        'ifa':'transfer',
+                        'ifa2':'transfer',
+                        'britned':'transfer',
+                        'moyle':'transfer',
+                        'ewic':'transfer',
+                        'nemo':'transfer',
+                        'nsl':'transfer',
+                        'eleclink':'transfer'}
+
+    # Map sources to colours
+    source_to_colour_map = {
+                       'coal': '#CC0000',
+                       'gas': '#CC0033',
+                       'ocgt': '#CC0066',
+                       'oil': '#CC0099',
+                       'nuclear': '#000066',
+                       'pumped': '#000099',
+                       'biomass': '#0000CC',
+                       'other': '#0000FF',
+                       'pumped_storage_pumping': '#0000FF',
+                       'wind': '#00CC00',
+                       'hydro': '#00CC33',
+                       'solar': '#FFFF33',
+                       'ifa': '#888888',
+                       'ifa2': '#888888',
+                       'britned': '#888888',
+                       'moyle': '#888888',
+                       'ewic': '#888888',
+                       'nemo': '#888888',
+                       'nsl': '#888888',
+                       'eleclink':'#888888'}
+    
+    # Map categories to colours
+    category_to_colour_map = {
+                        '(?)':'#ffffff',
+                         heading: '#ffffff',
+                        'carbon': '#AA0000',
+                        'other': '#2244AA', 
+                        'renewable': '#00CC00',
+                        'transfer': '#888888'}
+    
+    print(len(source_to_category_map))
+    print(data.columns.values)
+    print(len(data.values.flatten()))
+    
+    # Make a new data frame containing all the chart data
+    chartdata = pd.DataFrame({'source': data.columns.values, 
+                              'category': [source_to_category_map[i] for i in data.columns.values], 
+                              'heading': [heading] * len(source_to_category_map),
+                              'power': data.values.flatten(),
+                              'source_colour': [source_to_colour_map[i] for i in data.columns.values],
+                              'category_colour': [category_to_colour_map[i] for i in [source_to_category_map[j] for j in data.columns.values]]
+                              })
+    
+    # Calculate percentages of total power generation at source and category level
+    chartdata['percentage'] = chartdata['power'] / data.sum(axis=1).sum() * 100
+    categories = chartdata.groupby('category').sum().reset_index()
+    categories['percentage'] = categories['power'] / data.sum(axis=1).sum() * 100
+    label_to_percentage_map = {**dict(zip(chartdata.source,chartdata.percentage)), **dict(zip(categories.category,categories.percentage))}
+    label_to_percentage_map[heading] = 100
+    
+    # The colour maps for source and category need to be combined into one
+    combined_colour_map = {**source_to_colour_map, **category_to_colour_map} 
+
+    # plot the chart
+    fig_express = px.sunburst(chartdata, 
+                    path=['heading', 'category', 'source'], 
+                    values='power', color='category', 
+                    color_discrete_map=category_to_colour_map,
+                    width=400, height=400)
+
+    # Convert to graph_objects figure
+    fig_go = go.Figure(fig_express)
+
+    # Update hover labels
+    fig_go.update_traces(marker_colors=[combined_colour_map[i] for i in fig_express.data[-1].labels], 
+                        customdata=[label_to_percentage_map[i] for i in fig_express.data[-1].labels], 
+                        hoverlabel=dict(bgcolor="white"),
+                        hoverinfo='none',
+                        hovertemplate='<b>Value:</b> %{value}<br><b>Percentage:</b> %{customdata:.2f}%')
+    return fig_go
+
+
+def show_power_generation_chart(data, period):
+    # filter the data based on the period
+    match period:
+        case 'latest':
+            data = data[data['date']>=pd.Timestamp.today().floor('D')]
+            data = data.loc[data['period'] == data['period'].max()].set_index(['date', 'period'])
+        case 'today':
+            data = data[data['date']>=pd.Timestamp.today().floor('D')]
+        case 'month':
+            print("---")
+        case 'year':
+            print("---")
+    
+    # Merge the two wind sources
+    data['wind'] = data['wind'] + data['embedded_wind']
+    data.drop(columns=['embedded_wind'], inplace=True)
+    
+    # Find the total power and create a heading for the chart
+    total_power = data.sum(axis=1).sum()
+    chart_heading =  'Latest<br>' + str("{:.1f}".format(total_power / 1000)) + ' GW'
+    fig_go = plot_sunburst_chart(data, chart_heading)
+    return fig_go
