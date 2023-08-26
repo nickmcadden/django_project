@@ -1,6 +1,7 @@
 from django.shortcuts import render
 from django_project import models
 from django_project import data
+from django_project import visualisations
 from datetime import date as dt
 import plotly.graph_objects as go
 import plotly.io as pio
@@ -76,8 +77,15 @@ def index_view(request):
     # Convert the figure to an HTML div string
     daily_forecast_chart = pio.to_html(fig, full_html=False, default_width='600px')
     
+    # Get a wind farm map
+    folium_header, map_html, map_script = visualisations.uk_wind_power_map()
+    
+    # Send all the generated html to the index.html template
     return render(request, 'index.html', {'forecast_data': forecast_html,
                                           'latest_generation': latest_generation,
                                           'model_training': daily_model_training,
                                           'today_wind_forecast': today_wind_forecast,
-                                          'today_wind_actual': today_wind_actual})
+                                          'today_wind_actual': today_wind_actual,
+                                          'folium_header' : folium_header,
+                                          'map_html': map_html,
+                                          'map_script': map_script})

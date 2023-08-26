@@ -4,17 +4,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<link href="{% static 'base.css' %}" rel="stylesheet">
     <link href="{% static 'style.css' %}" rel="stylesheet">
+	{{folium_header|safe}}
     <title>Wind Power Forecast</title>
 </head>
 <body>
-    <h1>Daily Wind Power Forecast (MW)</h1>
-    
 	<!-- Wrapper for the page -->
-	<div class="container">
-		<div class="fixed-width">
-    		<!-- Display the DataFrame as a table -->
-    		<div class="charts-container">
+	<div id="page-container">
+		<div id="page-header">
+			<h2>Daily Wind Power Forecast (MW)</h2>
+		</div>
+		<div id="page-content">
+    		<div id="left-container">
 				<!-- Display the chart -->
    	 			<div class="chart">{{ today_wind_actual|safe }}</div>
     			<!-- Display the chart -->
@@ -22,8 +24,33 @@
 				<!-- Display the chart -->
    	 			<div class="chart">{{ model_training|safe }}</div>
 			</div>
-			<div class="data">{{ forecast_data|safe }}</div>
+			<div id="right-container">
+				<!-- Display the chart -->
+				<div class="chart">{{ latest_generation|safe }}</div>
+				<!-- Display the chart -->
+				
+				<div class="chart">{{ map_html|safe }}</div>
+					<script type="text/javascript">
+						document.addEventListener("DOMContentLoaded", function() {
+					  	  	// Your marker-adding JavaScript code here
+							{{map_script|safe}}
+						});
+					</script>
+				<div class="data">{{ forecast_data|safe }}</div>
+			</div>
 		</div>
 	</div>
 </body>
+<!-- Custom JavaScript to adjust map dimensions -->
+<script type="text/javascript">
+    window.onload = function() {
+        var mapDiv = document.querySelector('.folium-map');
+        if (mapDiv) {
+            mapDiv.style.width = '80%';   // Adjust width as desired
+            mapDiv.style.height = '500px';
+			mapDiv.style.backgroundColor = '#ffffff';
+        }
+		window.dispatchEvent(new Event('resize'));
+    }
+</script>
 </html>
