@@ -9,7 +9,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from bs4 import BeautifulSoup
 
-
 # Read the historical wind speed data from some locations around the UK
 location_geocode_data = {'Bracknell' : (51.4136, -0.7505), 
                          'Cardiff': (51.48, -3.18),
@@ -21,6 +20,7 @@ location_geocode_data = {'Bracknell' : (51.4136, -0.7505),
                          'Hull': (53.7446, -0.3352),
                          'Carlisle': (54.8951, -2.9382)}
 
+
 # Read and format the windspeed data recorded at different locations around the UK
 def format_windspeed_data(location, df):
     df['Date'] = df['time'].str[:10].astype('datetime64[ns]')
@@ -31,6 +31,7 @@ def format_windspeed_data(location, df):
                        "winddirection_10m": location+"_"+"winddirection_10m",}, inplace=True)
     return df
 
+
 def read_wind_power_data(start_date):
     csv_path = os.path.join(settings.BASE_DIR, 'data', 'GenerationbyFuelType_20220701_to_present.csv')
     windpowerdata = pd.read_csv(csv_path, parse_dates=['Date'], usecols=['Date', 'HalfHourPeriod', 'Wind'])
@@ -40,6 +41,7 @@ def read_wind_power_data(start_date):
     windpowerdata = windpowerdata.groupby(['Date', 'Hour']).agg({'Wind' : 'mean'}).reset_index()
     return windpowerdata
 
+
 def read_training_data(start_date):
     windpowerdata = read_wind_power_data(start_date)
     historical_data_url = "https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date="+str(start_date)+"&end_date=2023-08-01&hourly=windspeed_10m,winddirection_10m"
@@ -47,12 +49,13 @@ def read_training_data(start_date):
     windspeeddata = {}
     
     for i, location in enumerate(location_geocode_data.items()):
-        data = requests.get(historical_data_url.format(lat=str(location[1][0]), lon=str(location[1][1])))
+        data = requests.get(historical_data_url.format(lat=str(location[1][0]), lon=str(location[1][1])), verify=False)
         print('Reading data for', location[0], data.status_code)
         windspeeddata[i] = format_windspeed_data(location[0], pd.DataFrame(data.json()['hourly']))
         windpowerdata = windpowerdata.merge(windspeeddata[i], on=['Date', 'Hour'])
     
     return windpowerdata
+
 
 def read_forecast_data():
     forecast_data_url = "http://api.weatherapi.com/v1/forecast.json?key=c6d909ccb3044b41819172252232907&q={lat},{lon}&days=1"
@@ -74,12 +77,13 @@ def read_forecast_data():
 
     return forecast_data
 
+
 def read_forecast_data_old(start_date):
     forecast_data_url = 'https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={long}&hourly=windspeed_10m,winddirection_10m&past_days=92&forecast_days=1'
     forecast_data = pd.DataFrame()
 
     for i, location in enumerate(location_geocode_data.items()):
-        data = requests.get(forecast_data_url.format(lat=str(location[1][0]), long=str(location[1][1])))
+        data = requests.get(forecast_data_url.format(lat=str(location[1][0]), long=str(location[1][1])), verify=False)
         print(location[0], data.status_code)
         forecast_temp = format_windspeed_data(location[0], pd.DataFrame(data.json()['hourly']))
         # Note: The windspeed data from the forecast api show lower windspeeds than through the historical recorded data.
@@ -92,14 +96,14 @@ def read_forecast_data_old(start_date):
         forecast_data = forecast_data.merge(forecast_temp, on=['Date', 'Hour'])
 
     return forecast_data
-   
+    
     
 def merge_power_generation_data(grid_data, ntn_data):
     # map the ntn data to the database table columns
     data_mapping_ntn_columns = {'startTimeOfHalfHrPeriod': 'date',
                     'settlementPeriod': 'period',
                     'coal': 'coal',
-                    'ccgt': 'gas',
+                    'ccgt': 'ccgt',
                     'ocgt': 'ocgt',
                     'nuclear': 'nuclear',
                     'oil': 'oil',
@@ -113,7 +117,7 @@ def merge_power_generation_data(grid_data, ntn_data):
     data_mapping_grid_columns = {'SETTLEMENT_DATE': 'date',
                     'SETTLEMENT_PERIOD': 'period',
                     'EMBEDDED_WIND_GENERATION':'embedded_wind',
-                    'EMBEDDED_SOLAR_GENERATION':'solar',
+                    'EMBEDDED_SOLAR_GENERATION':'embedded_solar',
                     'PUMP_STORAGE_PUMPING':'pumped_storage_pumping',
                     'IFA_FLOW': 'ifa',
                     'IFA2_FLOW': 'ifa2',
@@ -139,7 +143,7 @@ def merge_power_generation_data(grid_data, ntn_data):
     integer_columns.remove('date')
     data[integer_columns] = data[integer_columns].astype(np.int64)
     return data
-    
+
 
 def xml_to_dataframe(xml, xpath):    
     root = lxml.etree.fromstring(xml)
@@ -195,123 +199,4 @@ def read_power_generation_data():
     return data
 
 
-def plot_sunburst_chart(data, heading):
-    # Map sources to main categories
-    source_to_category_map = {
-                        'coal':'carbon',
-                        'gas':'carbon',
-                        'ocgt':'carbon',
-                        'nuclear':'other',
-                        'oil':'carbon',
-                        'wind':'renewable',
-                        'hydro':'renewable',
-                        'pumped':'other',
-                        'biomass':'other',
-                        'other':'other',
-                        'solar':'renewable',
-                        'pumped_storage_pumping':'other',
-                        'ifa':'transfer',
-                        'ifa2':'transfer',
-                        'britned':'transfer',
-                        'moyle':'transfer',
-                        'ewic':'transfer',
-                        'nemo':'transfer',
-                        'nsl':'transfer',
-                        'eleclink':'transfer'}
 
-    # Map sources to colours
-    source_to_colour_map = {
-                       'coal': '#CC0000',
-                       'gas': '#CC0033',
-                       'ocgt': '#CC0066',
-                       'oil': '#CC0099',
-                       'nuclear': '#000066',
-                       'pumped': '#000099',
-                       'biomass': '#0000CC',
-                       'other': '#0000FF',
-                       'pumped_storage_pumping': '#0000FF',
-                       'wind': '#00CC00',
-                       'hydro': '#00CC33',
-                       'solar': '#FFFF33',
-                       'ifa': '#888888',
-                       'ifa2': '#888888',
-                       'britned': '#888888',
-                       'moyle': '#888888',
-                       'ewic': '#888888',
-                       'nemo': '#888888',
-                       'nsl': '#888888',
-                       'eleclink':'#888888'}
-    
-    # Map categories to colours
-    category_to_colour_map = {
-                        '(?)':'#ffffff',
-                         heading: '#ffffff',
-                        'carbon': '#AA0000',
-                        'other': '#2244AA', 
-                        'renewable': '#00CC00',
-                        'transfer': '#888888'}
-    
-    print(len(source_to_category_map))
-    print(data.columns.values)
-    print(len(data.values.flatten()))
-    
-    # Make a new data frame containing all the chart data
-    chartdata = pd.DataFrame({'source': data.columns.values, 
-                              'category': [source_to_category_map[i] for i in data.columns.values], 
-                              'heading': [heading] * len(source_to_category_map),
-                              'power': data.values.flatten(),
-                              'source_colour': [source_to_colour_map[i] for i in data.columns.values],
-                              'category_colour': [category_to_colour_map[i] for i in [source_to_category_map[j] for j in data.columns.values]]
-                              })
-    
-    # Calculate percentages of total power generation at source and category level
-    chartdata['percentage'] = chartdata['power'] / data.sum(axis=1).sum() * 100
-    categories = chartdata.groupby('category').sum().reset_index()
-    categories['percentage'] = categories['power'] / data.sum(axis=1).sum() * 100
-    label_to_percentage_map = {**dict(zip(chartdata.source,chartdata.percentage)), **dict(zip(categories.category,categories.percentage))}
-    label_to_percentage_map[heading] = 100
-    
-    # The colour maps for source and category need to be combined into one
-    combined_colour_map = {**source_to_colour_map, **category_to_colour_map} 
-
-    # plot the chart
-    fig_express = px.sunburst(chartdata, 
-                    path=['heading', 'category', 'source'], 
-                    values='power', color='category', 
-                    color_discrete_map=category_to_colour_map,
-                    width=400, height=400)
-
-    # Convert to graph_objects figure
-    fig_go = go.Figure(fig_express)
-
-    # Update hover labels
-    fig_go.update_traces(marker_colors=[combined_colour_map[i] for i in fig_express.data[-1].labels], 
-                        customdata=[label_to_percentage_map[i] for i in fig_express.data[-1].labels], 
-                        hoverlabel=dict(bgcolor="white"),
-                        hoverinfo='none',
-                        hovertemplate='<b>Value:</b> %{value}<br><b>Percentage:</b> %{customdata:.2f}%')
-    return fig_go
-
-
-def show_power_generation_chart(data, period):
-    # filter the data based on the period
-    match period:
-        case 'latest':
-            data = data[data['date']>=pd.Timestamp.today().floor('D')]
-            data = data.loc[data['period'] == data['period'].max()].set_index(['date', 'period'])
-        case 'today':
-            data = data[data['date']>=pd.Timestamp.today().floor('D')]
-        case 'month':
-            print("---")
-        case 'year':
-            print("---")
-    
-    # Merge the two wind sources
-    data['wind'] = data['wind'] + data['embedded_wind']
-    data.drop(columns=['embedded_wind'], inplace=True)
-    
-    # Find the total power and create a heading for the chart
-    total_power = data.sum(axis=1).sum()
-    chart_heading =  'Latest<br>' + str("{:.1f}".format(total_power / 1000)) + ' GW'
-    fig_go = plot_sunburst_chart(data, chart_heading)
-    return fig_go
