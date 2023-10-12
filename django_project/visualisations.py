@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import plotly.io as pio
 
+
 def dms_string_to_decimal(dms_str):
     """
     Convert a string in DMS (Degrees-Minutes-Seconds) format to decimal degrees.
@@ -20,12 +21,12 @@ def dms_string_to_decimal(dms_str):
     Returns:
     - Decimal representation of the DMS coordinate.
     """
-
+    
     # Extracting values using regex
     match = re.match(r'(\d+)°(\d+)' + r"'([\d\.]+)\"([NSEW])", str(dms_str).upper())
     if not match:
         return np.nan
-
+    
     degrees, minutes, seconds, direction = match.groups()
     degrees, minutes, seconds = float(degrees), float(minutes), float(seconds)
 
@@ -67,9 +68,8 @@ def uk_wind_power_map():
 
     # Add markets at each wind farm location
     for i, row in wind_farms.iterrows():
-        print(row.latitude, row.Power)
         if row.latitude > 0 and row.Power > 0:
-            print([row.latitude, row.longitude], row.Name)
+            #print([row.latitude, row.longitude], row.Name)
             #folium.Marker( tooltip=row.Name, popup=row.Name).add_to(uk_map)
             folium.CircleMarker(
                 location=[row.latitude, row.longitude],
@@ -164,10 +164,6 @@ def plot_sunburst_chart(data, heading):
                         'other': '#2244AA', 
                         'renewable': '#00CC00',
                         'transfer': '#888888'}
-                        
-    print(data)
-
-    print(source_to_category_map, data.columns.values)
     
     # Make a new data frame containing all the chart data
     chartdata = pd.DataFrame({'source': data.columns.values, 
@@ -189,14 +185,14 @@ def plot_sunburst_chart(data, heading):
     
     # The colour maps for source and category need to be combined into one
     combined_colour_map = {**source_to_colour_map, **category_to_colour_map} 
-
+    
     # plot the chart
     fig_express = px.sunburst(chartdata, 
                     path=['heading', 'category', 'source'], 
                     values='power', color='category', 
                     color_discrete_map=category_to_colour_map,
                     width=400, height=400)
-
+    
     # Convert to graph_objects figure
     fig_go = go.Figure(fig_express)
 
@@ -209,7 +205,7 @@ def plot_sunburst_chart(data, heading):
     return fig_go
 
 
-def show_power_generation_chart(data, period):
+def show_power_chart(data, period):
     # filter the data based on the period
     match period:
         case 'latest':
@@ -240,19 +236,29 @@ def show_model_evaluation(daily_training, daily_forecast):
     fig.add_trace(go.Scatter(x=daily_forecast["Date"], y=daily_forecast["Forecast_Ensemble"], name='Forecast (MW)', line=dict(color='royalblue', width=2)))
     fig.update_layout(title="Model Training Performance", legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
     return fig
-    
-    
+
+
 def show_todays_forecast(forecast_today):
     # Create a plot of hourly forecast for today vs recorded wind power
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_0"], name = 'Forecast 0', line=dict(color='lightgrey', width=2)))
     fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_1"], name = 'Forecast 1', line=dict(color='lightslategrey', width=2)))
     fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_2"], name = 'Forecast 2', line=dict(color='lightsteelblue', width=2)))
-    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Ensemble"], name = 'Ensemble Forecast', line=dict(color='royalblue', width=2)))
+    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Stack"], name = 'Ensemble 1 (XGBoost)', line=dict(color='lightsteelblue', width=2)))
+    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Ensemble"], name = 'Ensemble 2 (weighted)', line=dict(color='royalblue', width=2)))
     fig.update_layout(title="UK Wind Power Forecast (MW) " + pd.Timestamp.today().strftime("%A %d %B"), showlegend=True)
+    fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.99))
+    #fig.update_xaxes(minor=dict(ticks="inside", showgrid=True, dtick=60*60*1000,), ticklabelmode="period", tickformat="%H:%M%p")
+    #fig.update_yaxes(tickformat=",.0f")
+    return fig
+
+
+def show_all_time_generation(grid_generation_all):
+    # Create a plot of hourly forecast for today vs recorded wind power
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=grid_generation_all["date"], y=grid_generation_all["wind"], name = 'Wind generation', line=dict(color='green', width=2)))
+    fig.update_layout(title="UK Wind Power Generation (MW) " + pd.Timestamp.today().strftime("%A %d %B"), showlegend=True)
     fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
-    fig.update_xaxes(minor=dict(ticks="inside", showgrid=True, dtick=60*60*1000,), ticklabelmode="period", tickformat="%H:%M%p")
-    fig.update_yaxes(tickformat=",.0f")
     return fig
 
 
@@ -262,11 +268,11 @@ def show_forecast_vs_actual(grid_generation_today, forecast_today):
     fig.add_trace(go.Scatter(x=grid_generation_today["hour"], y=grid_generation_today["wind"], name = 'Wind Power', line=dict(color='green', width=2)))
     fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Ensemble"], name = 'Ensemble Forecast', line=dict(color='royalblue', width=2)))
     fig.update_layout(title="UK Wind Power Forecast (MW) " + pd.Timestamp.today().strftime("%A %d %B"), showlegend=True)
-    fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
-    fig.update_xaxes(minor=dict(ticks="inside", showgrid=True, dtick=60*60*1000,), ticklabelmode="period", tickformat="%H:%M%p")
-    fig.update_yaxes(tickformat=",.0f")
+    fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.99))
+    #fig.update_xaxes(minor=dict(ticks="inside", showgrid=True, dtick=60*60*1000,), ticklabelmode="period", tickformat="%H:%M%p")
+    #fig.update_yaxes(tickformat=",.0f")
     return fig
-    
+
 '''
 # This is the code to create a cumulative bar chart showing the uk's growth in offshore wind capacity by time
 data = data.groupby('Completion').sum().reset_index()

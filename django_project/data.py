@@ -1,6 +1,7 @@
 from django.conf import settings
 import pandas as pd
 import numpy as np
+import sqlite3 as sql
 import requests as requests
 import os
 import pickle as pkl
@@ -8,6 +9,7 @@ import lxml
 import plotly.express as px
 import plotly.graph_objects as go
 from bs4 import BeautifulSoup
+
 
 # Read the historical wind speed data from some locations around the UK
 location_geocode_data = {'Bracknell' : (51.4136, -0.7505), 
@@ -34,7 +36,8 @@ def format_windspeed_data(location, df):
 
 def read_wind_power_data(start_date):
     csv_path = os.path.join(settings.BASE_DIR, 'data', 'GenerationbyFuelType_20220701_to_present.csv')
-    windpowerdata = pd.read_csv(csv_path, parse_dates=['Date'], usecols=['Date', 'HalfHourPeriod', 'Wind'])
+    windpowerdata = pd.read_csv(csv_path, parse_dates=['startTimeOfHalfHrPeriod'], usecols=['startTimeOfHalfHrPeriod','settlementPeriod', 'wind'])
+    windpowerdata.columns = ['Date', 'HalfHourPeriod', 'Wind']
     windpowerdata = windpowerdata[windpowerdata['HalfHourPeriod'].isnull()==False]
     windpowerdata['Hour'] = np.ceil(windpowerdata['HalfHourPeriod'] / 2)
     windpowerdata = windpowerdata.astype({"Hour": int})
@@ -79,7 +82,7 @@ def read_forecast_data():
 
 
 def read_forecast_data_old(start_date):
-    forecast_data_url = 'https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={long}&hourly=windspeed_10m,winddirection_10m&past_days=92&forecast_days=1'
+    forecast_data_url = 'https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={long}&hourly=windspeed_10m,winddirection_10m&past_days=92&forecast_days=10'
     forecast_data = pd.DataFrame()
 
     for i, location in enumerate(location_geocode_data.items()):
@@ -96,8 +99,8 @@ def read_forecast_data_old(start_date):
         forecast_data = forecast_data.merge(forecast_temp, on=['Date', 'Hour'])
 
     return forecast_data
-    
-    
+
+
 def merge_power_generation_data(grid_data, ntn_data):
     # map the ntn data to the database table columns
     data_mapping_ntn_columns = {'startTimeOfHalfHrPeriod': 'date',
@@ -174,15 +177,15 @@ def update_power_generation_data(base, update):
 
 def read_power_generation_data():
     # Check if the historical data file is already saved to pickle and read
-    if os.path.isfile("generation_half_hourly.pickle"):
+    if os.path.isfile("power_production.pkl"):
         print("Base data found")
-        generation_half_hourly_base = pkl.load(open("generation_half_hourly.pickle", "rb"))
+        generation_half_hourly_base = pkl.load(open("power_production.pkl", "rb"))
     else:
         ntn_data = pd.read_csv("GenerationbyFuelType_20220701_to_present.csv", parse_dates=['startTimeOfHalfHrPeriod'])
         grid_data = pd.read_csv("https://data.nationalgrideso.com/backend/dataset/7a12172a-939c-404c-b581-a6128b74f588/resource/177f6fa4-ae49-4182-81ea-0c6b35f26ca6/download/demanddataupdate.csv", parse_dates=['SETTLEMENT_DATE'])
         generation_half_hourly_base = merge_power_generation_data(grid_data, ntn_data)
         generation_half_hourly_base.to_csv('generation_half_hourly_base.csv')
-
+    
     # Call the external data for the updates to the ntn and grid data
     ntn_data = xml_to_dataframe(requests.get("https://www.bmreports.com/bmrs/?q=ajax/xml_download/FUELHH/xml/").content, "//responseList/item")
     grid_data = pd.read_csv("https://data.nationalgrideso.com/backend/dataset/7a12172a-939c-404c-b581-a6128b74f588/resource/177f6fa4-ae49-4182-81ea-0c6b35f26ca6/download/demanddataupdate.csv", parse_dates=['SETTLEMENT_DATE'])
@@ -194,9 +197,7 @@ def read_power_generation_data():
     data.to_csv('generation_half_hourly.csv')
     
     # Save the new data as a new base data file
-    pkl.dump(data, open("generation_half_hourly.pickle", "wb"))
+    pkl.dump(data, open("power_production.pkl", "wb"))
     
     return data
-
-
-
+    

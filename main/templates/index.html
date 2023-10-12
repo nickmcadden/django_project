@@ -4,9 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+	{{folium_header|safe}}
 	<link href="{% static 'base.css' %}" rel="stylesheet">
     <link href="{% static 'style.css' %}" rel="stylesheet">
-	{{folium_header|safe}}
     <title>Wind Power Forecast</title>
 </head>
 <body>
@@ -17,18 +17,13 @@
 		</div>
 		<div id="page-content">
     		<div id="left-container">
-				<!-- Display the chart -->
    	 			<div class="chart">{{ today_wind_actual|safe }}</div>
-    			<!-- Display the chart -->
    	 			<div class="chart">{{ today_wind_forecast|safe }}</div>
-				<!-- Display the chart -->
    	 			<div class="chart">{{ model_training|safe }}</div>
+				<div class="chart">{{ all_time_generation|safe }}</div>
 			</div>
 			<div id="right-container">
-				<!-- Display the chart -->
 				<div class="chart">{{ latest_generation|safe }}</div>
-				<!-- Display the chart -->
-				
 				<div class="chart">{{ map_html|safe }}</div>
 					<script type="text/javascript">
 						document.addEventListener("DOMContentLoaded", function() {

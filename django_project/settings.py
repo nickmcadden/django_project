@@ -26,7 +26,6 @@ SECRET_KEY = 'django-insecure-j4@q45y7(bv*sk3b$qa7076-x-l70k9wyv_#zr0gfk!uw#4n&b
 DEBUG = True
 
 ALLOWED_HOSTS = ['ec2-54-147-197-190.compute-1.amazonaws.com', '127.0.0.1']
-
 # Application definition
 
 INSTALLED_APPS = [
@@ -68,7 +67,6 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'django_project.wsgi.application'
-
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases

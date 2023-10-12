@@ -1,8 +1,3 @@
-h1 {
-    text-align: center;
-}
-
-
 body {
 	background-color:  #f4f4f4;
     font-family: Arial, sans-serif;
@@ -11,33 +6,65 @@ body {
 }
 
 /* Container (could be body or another wrapper element) */
-.container {
+#page-container {
 	width: 100%;
+	position: relative;
     justify-content: center; /* Center child elements horizontally */
 }
 
+div #page-header {
+	height: 100px;
+	line-height: 100px;
+	background-color: #888888;
+}
+
+div #page-header h2 {
+	font-size: 24px;
+    text-align: center;
+	justify-content: center;
+	color: #ffffff;
+}
+
 /* Container (could be body or another wrapper element) */
-.fixed-width { 
-	overflow:hidden;
+#page-content { 
+	overflow :hidden;
+	position :relative;
 	background-color: #ffffff;
 	margin: 0 auto;
 	width: 1200px;
 }
 
 /* Container for charts on the right, also taking up half the width */
-.charts-container {
+#left-container {
+	border: 1px;
 	float: left;
 	align: "right";
     width: 60%; /* takes up half of the container's width */
 }
 
-.data {
-	margin: 40px 0px 40px 0px;
+/* Container for charts on the right, also taking up half the width */
+#right-container {
+	border: 1px;
+	margin: 0px;
 	float: left;
-	width: 40%;
+    width: 40%; /* takes up half of the container's width */
 }
 
-/* Each chart inside the charts container */
+/* Container for charts on the right, also taking up half the width */
+.data {
+	left: 600px;
+	margin: 40px 0px 40px 0px;
+	float: left;
+}
+
+/* Container for charts on the right, also taking up half the width */
+.folium-map {
+	background-color:#ffffff;
+	height: 400px;
+	float: left;
+}
+
+/*  Each chart inside the charts container */
 .chart {
 }
 
@@ -59,4 +86,3 @@ body {
 .data-table tr:nth-child(even) {
     background-color: #f2f2f2;
 }
-

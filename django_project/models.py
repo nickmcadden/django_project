@@ -17,6 +17,7 @@ def transform_angle(a):
     weight = np.sin(np.radians(transform))
     return weight
 
+
 # Create some data transformations for the linear regression
 def create_lr_features(X):
     f05 = np.power(X, 0.5)
@@ -31,6 +32,7 @@ def create_lr_features(X):
     X = np.concatenate((X, f05, f08, f12, f16, f20, f24, f28, f30, wd_feature), axis=1)    
     return X
 
+
 def create_features(X, model):
     # Input fields for the model
     base_features = ['Hour', 'Bracknell_windspeed_10m', 'Bracknell_winddirection_10m', 
@@ -42,7 +44,7 @@ def create_features(X, model):
                         'Norwich_windspeed_10m', 'Norwich_winddirection_10m',
                         'Hull_windspeed_10m', 'Hull_winddirection_10m',
                         'Carlisle_windspeed_10m', 'Carlisle_winddirection_10m']
-                        
+    
     # create some feature within the dataframe
     X['DayofYear'] = X['Date'].dt.day_of_year
     X['DayofYearLr'] =  500 - (np.abs(X['DayofYear'] - 45))
@@ -52,6 +54,7 @@ def create_features(X, model):
     else:
         X = X.values
     return X
+
 
 # Cross-validate and fit predictive model
 def cross_validate_and_fit_model(X, y, model, n_splits=5):
@@ -66,7 +69,8 @@ def cross_validate_and_fit_model(X, y, model, n_splits=5):
         print('', end='>')
     print(' Training model mean error', np.round(np.mean(np.abs(y - oob))),'MW')
     model.fit(X, y)
-    return model
+    return model, oob
+
 
 def create_model(): 
     if os.path.isfile("ensemble_model.pickle"):
@@ -81,34 +85,52 @@ def create_model():
         model_a = RandomForestRegressor(n_estimators=25, max_depth=12, min_samples_leaf=1)
         model_b = xgboost.XGBRegressor(tree_method="hist", eval_metric=mean_absolute_error, max_depth=12, min_child_weight=2)
         model_c = LinearRegression()
-
+        model_d = xgboost.XGBRegressor(tree_method="hist", eval_metric=mean_absolute_error, max_depth=12, min_child_weight=2)
+        
         base_data = data.read_training_data(start_date='2022-08-01')
-        training_prediction = base_data[['Date', 'Hour', 'Wind']]
+        training_prediction = base_data.copy()[['Date', 'Hour', 'Wind']]
+        
         # Cross validate and fit each model on the training data
-        for i, model in enumerate([model_a, model_b, model_c]):
+        model_list = [model_a, model_b, model_c]
+        oob_features = np.zeros((len(base_data), len(model_list)))
+        
+        for i, model in enumerate(model_list):
             print('Training',model.__module__,'model')
             X = create_features(base_data, model)
             y = base_data['Wind'].to_numpy()
-            model = cross_validate_and_fit_model(X, y, model, n_splits=5)
+            model, oob = cross_validate_and_fit_model(X, y, model, n_splits=5)
+            oob_features[:,i] = oob
             training_prediction.loc[:, 'Training_Prediction_' + str(i)] = np.clip(model.predict(X) ,1000 , 16000)
-            ensemble_model = {'data':training_prediction, 'model_a':model_a, 'model_b':model_b, 'model_c':model_c}
-            pkl.dump(ensemble_model, open("ensemble_model.pickle", "wb"))
-
-    return training_prediction, model_a, model_b, model_c
+        
+        # cv and create new model with the oob data added with XGBoost 
+        X = create_features(base_data, model_d)
+        X = np.append(X, oob_features, axis=1)
+        model, oob = cross_validate_and_fit_model(X, y, model_d, n_splits=5)
+        training_prediction.loc[:, 'Training_Prediction_' + str(i)] = np.clip(model.predict(X) ,1000 , 16000)
+        ensemble_model = {'data':training_prediction, 'model_a':model_a, 'model_b':model_b, 'model_c':model_c, 'model_d':model_d}
+        #pkl.dump(ensemble_model, open("ensemble_model.pickle", "wb"))
+    
+    return training_prediction, model_a, model_b, model_c, model_d
+    
 
 def create_forecast(forecast_data):
-    training_prediction, model_a, model_b, model_c = create_model()
-    forecast = forecast_data[['Date', 'Hour']]
+    training_prediction, model_a, model_b, model_c, model_d = create_model()
+    forecast = forecast_data.copy()[['Date', 'Hour']]
     # Make a prediction on the forecast data with each model
     print('\nMaking forecast with trained models')
     for j, model in enumerate([model_a, model_b, model_c]):
         # Make a prediction on the forecast data with each model
         X = create_features(forecast_data, model)
-        forecast['Forecast_' + str(j)] = np.clip(model.predict(X) ,1000 , 16000)
-
+        forecast['Forecast_' + str(j)] = np.clip(model.predict(X),1000,16000)
+    
+    # Add the forecasts for the other models to the training data and create a forecast with the stacked model
+    X = create_features(forecast_data, model_d)
+    X = np.append(X, forecast[['Forecast_0', 'Forecast_1', 'Forecast_2']].values, axis=1)
+    forecast['Forecast_Stack'] = np.clip(model_d.predict(X),1000,16000)
+    
     # Create Ensemble Forecast (Currently XGBoost results can't be improved with other model combination)
     forecast['Forecast_Ensemble'] = forecast['Forecast_0'] * 0.4 + \
                                     forecast['Forecast_1'] * 0.4 + \
                                     forecast['Forecast_2'] * 0.2
-
+    
     return training_prediction, forecast
