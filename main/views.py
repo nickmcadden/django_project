@@ -26,7 +26,8 @@ def index_view(request):
     grid_generation_today['hour'] = grid_generation_today['date'] + pd.to_timedelta((grid_generation_today['period']-1)/2, unit='h')
     
     # Get all the grid generation data at a daily level
-    grid_generation_all = grid_generation.groupby('date').mean().reset_index()
+    grid_generation['month'] = grid_generation['date'].to_numpy().astype('datetime64[M]')
+    grid_generation_all = grid_generation.copy().groupby('month').mean().reset_index()
     
     # Show the prediction for today
     forecast_today = forecast.copy()[forecast['Date']>=pd.Timestamp.today().floor('D')]
@@ -53,19 +54,26 @@ def index_view(request):
     fig_forecast_vs_actual = visualisations.show_forecast_vs_actual(grid_generation_today, forecast_today)
     today_wind_actual = pio.to_html(fig_forecast_vs_actual, full_html=False, default_width='600px')
     
+    # Get UK wind farm data
+    fig_uk_wind_farms = visualisations.show_uk_wind_farms()
+    uk_wind_farm_chart = pio.to_html(fig_uk_wind_farms, full_html=False, default_width='600px')
+    
     # Get a wind farm map
     folium_header, map_html, map_script = visualisations.uk_wind_power_map()
     
-    # Send all the generated html to the index.html template
-    return render(request, 'index.html', {'forecast_data': forecast_html,
+    all_page_content = render(request, 'index.html', {'forecast_data': forecast_html,
                                           #'latest_generation': latest_generation,
                                           'all_time_generation': all_time_generation,
                                           'model_training': daily_model_training,
                                           'today_wind_forecast': today_wind_forecast,
                                           'today_wind_actual': today_wind_actual,
                                           'folium_header' : folium_header,
+                                          'uk_wind_farms': uk_wind_farm_chart,
                                           'map_html': map_html,
                                           'map_script': map_script})
+                  
+    # Send all the generated html to the index.html template
+    return all_page_content
 
 '''
 To Do:

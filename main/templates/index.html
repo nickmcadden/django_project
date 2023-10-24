@@ -23,7 +23,7 @@
 				<div class="chart">{{ all_time_generation|safe }}</div>
 			</div>
 			<div id="right-container">
-				<div class="chart">{{ latest_generation|safe }}</div>
+				<!-- <div class="chart">{{ latest_generation|safe }}</div> -->
 				<div class="chart">{{ map_html|safe }}</div>
 					<script type="text/javascript">
 						document.addEventListener("DOMContentLoaded", function() {
@@ -31,7 +31,7 @@
 							{{map_script|safe}}
 						});
 					</script>
-				<div class="data">{{ forecast_data|safe }}</div>
+				<div class="data">{{ uk_wind_farms|safe }}</div>
 			</div>
 		</div>
 	</div>

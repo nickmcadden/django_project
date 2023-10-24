@@ -1,4 +1,6 @@
+from django.conf import settings
 import re
+import os
 import folium
 import pandas as pd
 import numpy as np
@@ -39,7 +41,7 @@ def dms_string_to_decimal(dms_str):
 
 
 def read_wind_farm_data():
-    wind_farms = pd.read_csv('uk_wind_farms.csv', parse_dates=['Completion'])
+    wind_farms = pd.read_csv(os.path.join(settings.DATA_DIR, 'uk_wind_farms.csv'), parse_dates=['Completion'])
     # Splitting the coordinate column into latitude and longitude
     wind_farms[['latitude_dms', 'longitude_dms']] = wind_farms['Location'].str.split(' ', expand=True)
 
@@ -82,28 +84,29 @@ def uk_wind_power_map():
 
     # Overlay your image
     img_bounds = [(49.7, -9.25), (59.00, 3.9)]  # Example bounds, adjust to fit your image
-
+    
     folium.raster_layers.ImageOverlay(
-        image="uk_map_grey.png",
+        image=os.path.join(settings.DATA_DIR, 'uk_map_grey.png'),
         bounds=img_bounds,
         interactive=True,                
         cross_origin=False,
         zindex=1
     ).add_to(uk_map)
-
+    
     # Restrict the viewable area to the image bounds and limit zoom
     uk_map.fit_bounds(img_bounds)
     uk_map.options['minZoom'] = 5  # Example, adjust as needed
     uk_map.options['maxZoom'] = 6  # Prevent zooming
 
     # Save the map to an HTML file
-    uk_map.save('wind_farm_map.html')
+    uk_map.save(os.path.join(settings.DATA_DIR, 'wind_farm_map.html'))
 
     folium_header = uk_map.get_root().header.render()
     map_html = uk_map.get_root().html.render()
     map_script = uk_map.get_root().script.render()
 
     return folium_header, map_html, map_script
+
 
 def plot_sunburst_chart(data, heading):
     # Map sources to main categories
@@ -219,8 +222,8 @@ def show_power_chart(data, period):
             print("---")
     
     # Merge the two wind sources
-    data['wind'] = data['wind'] + data['embedded_wind']
-    data.drop(columns=['embedded_wind'], inplace=True)
+    data['wind'] = data['wind(offshore)'] + data['wind(onshore)']
+    data.drop(columns=['wind(offshore)', 'wind(onshore)'], inplace=True)
     
     # Find the total power and create a heading for the chart
     total_power = data.sum(axis=1).sum()
@@ -235,6 +238,7 @@ def show_model_evaluation(daily_training, daily_forecast):
     fig.add_trace(go.Scatter(x=daily_training["Date"], y=daily_training["Wind"], name = 'Wind Power', line=dict(color='green', width=2)))
     fig.add_trace(go.Scatter(x=daily_forecast["Date"], y=daily_forecast["Forecast_Ensemble"], name='Forecast (MW)', line=dict(color='royalblue', width=2)))
     fig.update_layout(title="Model Training Performance", legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
+    #fig.update_layout(legend=dict(orientation="h",yanchor="bottom",y=1.02,xanchor="right",x=1))
     return fig
 
 
@@ -244,10 +248,11 @@ def show_todays_forecast(forecast_today):
     fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_0"], name = 'Forecast 0', line=dict(color='lightgrey', width=2)))
     fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_1"], name = 'Forecast 1', line=dict(color='lightslategrey', width=2)))
     fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_2"], name = 'Forecast 2', line=dict(color='lightsteelblue', width=2)))
-    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Stack"], name = 'Ensemble 1 (XGBoost)', line=dict(color='lightsteelblue', width=2)))
-    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Ensemble"], name = 'Ensemble 2 (weighted)', line=dict(color='royalblue', width=2)))
+    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Stack"], name = 'Ensemble 1 (XGBoost)', line=dict(color='royalblue', width=2)))
+    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Ensemble"], name = 'Ensemble 2 (weighted)', line=dict(color='cadetblue', width=2)))
     fig.update_layout(title="UK Wind Power Forecast (MW) " + pd.Timestamp.today().strftime("%A %d %B"), showlegend=True)
     fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.99))
+    #fig.update_layout(legend=dict(orientation="h",yanchor="bottom",y=1.02,xanchor="right",x=1))
     #fig.update_xaxes(minor=dict(ticks="inside", showgrid=True, dtick=60*60*1000,), ticklabelmode="period", tickformat="%H:%M%p")
     #fig.update_yaxes(tickformat=",.0f")
     return fig
@@ -255,31 +260,58 @@ def show_todays_forecast(forecast_today):
 
 def show_all_time_generation(grid_generation_all):
     # Create a plot of hourly forecast for today vs recorded wind power
+    print(grid_generation_all[['month', 'wind(offshore)', 'wind(onshore)', 'solar', 'hydro']])
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=grid_generation_all["date"], y=grid_generation_all["wind"], name = 'Wind generation', line=dict(color='green', width=2)))
-    fig.update_layout(title="UK Wind Power Generation (MW) " + pd.Timestamp.today().strftime("%A %d %B"), showlegend=True)
+    fig.add_trace(go.Scatter(x=grid_generation_all["month"], y=grid_generation_all["wind(offshore)"], name = 'Wind (offshore)', line=dict(color='seagreen', width=2)))
+    fig.add_trace(go.Scatter(x=grid_generation_all["month"], y=grid_generation_all["wind(onshore)"], name = 'Wind (onshore)', line=dict(color='lawngreen', width=2)))
+    fig.add_trace(go.Scatter(x=grid_generation_all["month"], y=grid_generation_all["solar"], name = 'Solar', line=dict(color='yellow', width=2)))
+    fig.add_trace(go.Scatter(x=grid_generation_all["month"], y=grid_generation_all["hydro"], name = 'Hydro', line=dict(color='mediumaquamarine', width=2)))
+    fig.update_layout(title="UK Renewable Power Generation (MW) ", showlegend=True)
     fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
+    fig.update_xaxes(nticks=10) 
     return fig
 
 
 def show_forecast_vs_actual(grid_generation_today, forecast_today):
     # Create a plot of the daily forecast vs recorded wind power
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=grid_generation_today["hour"], y=grid_generation_today["wind"], name = 'Wind Power', line=dict(color='green', width=2)))
+    fig.add_trace(go.Scatter(x=grid_generation_today["hour"], y=grid_generation_today["wind(offshore)"], name = 'Wind Power', line=dict(color='green', width=2)))
     fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Ensemble"], name = 'Ensemble Forecast', line=dict(color='royalblue', width=2)))
     fig.update_layout(title="UK Wind Power Forecast (MW) " + pd.Timestamp.today().strftime("%A %d %B"), showlegend=True)
     fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.99))
+    #fig.update_layout(legend=dict(orientation="h",yanchor="bottom",y=1.02,xanchor="right",x=1))
     #fig.update_xaxes(minor=dict(ticks="inside", showgrid=True, dtick=60*60*1000,), ticklabelmode="period", tickformat="%H:%M%p")
     #fig.update_yaxes(tickformat=",.0f")
     return fig
 
-'''
-# This is the code to create a cumulative bar chart showing the uk's growth in offshore wind capacity by time
-data = data.groupby('Completion').sum().reset_index()
-# calculate the cumulative power capacity by month
-data['Cumulative_Power'] = np.cumsum(data['Power'])
-fig = px.bar(data, x="Completion", y="Cumulative_Power")
-# fig.add_trace(go.bar(x=wind_farms["Completion"], y=np.cumsum(wind_farms["Power"]), name = 'Wind Power', bar=dict(color='green', width=2)))
-fig.update_layout(title="Wind Farm Project Completions (Cumulative Power Capacity by Month)", legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
-fig.show()
-'''
+
+def format_windfarm_data(uk_windfarms):
+    start = uk_windfarms['Completion'].min()
+    end = uk_windfarms['Completion'].max()
+    all_months = pd.DataFrame({'Name':'', 'Completion': pd.date_range(start=start, end=end, freq="M"), 'Power':0, 'Colour': 'lightslategray'})
+    uk_windfarms['Colour'] = 'crimson'
+    uk_windfarms = all_months.merge(uk_windfarms, on=['Name', 'Completion', 'Power', 'Colour'], how='outer')
+    uk_windfarms = uk_windfarms.sort_values(by=['Completion', 'Colour'], ascending=True)
+    uk_windfarms = uk_windfarms.groupby(['Completion', 'Colour', 'Name']).sum().reset_index()
+    uk_windfarms['Cumulative Power'] = np.cumsum(uk_windfarms['Power'])
+    uk_windfarms = uk_windfarms[uk_windfarms['Completion']>=pd.Timestamp.today().floor('D')]
+    uk_windfarms['Completion'] = uk_windfarms['Completion'].astype(str).apply(lambda x: x[:7])
+    uk_windfarms.drop_duplicates(subset=['Completion'], keep='first', inplace=True)
+    return uk_windfarms
+
+
+def show_uk_wind_farms():
+    uk_windfarms = read_wind_farm_data()
+    uk_windfarms = format_windfarm_data(uk_windfarms)
+    # calculate the cumulative power capacity by month
+    fig = go.Figure(data=[go.Bar(
+        x=uk_windfarms['Completion'],
+        y=uk_windfarms['Cumulative Power'],
+        marker_color=uk_windfarms['Colour'],
+        text=uk_windfarms['Name'],
+        textposition="outside",
+        textangle=45 # marker color can be a single color value or an iterable
+    )])
+    fig.update_layout(title_text="Offshore Wind Farm Completions (MW Capacity)")
+    fig.update_layout(width=500, height=400)
+    return fig

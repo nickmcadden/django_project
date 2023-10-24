@@ -2,7 +2,9 @@ import re
 import folium
 import pandas as pd
 import numpy as np
-
+import plotly.graph_objects as go
+import plotly.express as px
+import plotly.io as pio
 
 def dms_string_to_decimal(dms_str):
     """
@@ -36,12 +38,10 @@ def dms_string_to_decimal(dms_str):
 
 
 def read_wind_farm_data():
-    wind_farms = pd.read_csv('uk_wind_farms.csv')
-    print(wind_farms)
+    wind_farms = pd.read_csv('uk_wind_farms.csv', parse_dates=['Completion'])
     # Splitting the coordinate column into latitude and longitude
     wind_farms[['latitude_dms', 'longitude_dms']] = wind_farms['Location'].str.split(' ', expand=True)
 
-    print(wind_farms.dtypes)
     # Converting DMS string columns to decimal
     wind_farms['latitude'] = wind_farms['latitude_dms'].apply(dms_string_to_decimal)
     wind_farms['longitude'] = wind_farms['longitude_dms'].apply(dms_string_to_decimal)
@@ -52,7 +52,17 @@ def read_wind_farm_data():
     return wind_farms
 
 # Wind farm map data 
-wind_farms = read_wind_farm_data()
+wind_farms = read_wind_farm_data()#.sort_values('Completion')
+
+'''
+data = data.groupby('Completion').sum().reset_index()
+# calculate the cumulative power capacity by month
+data['Cumulative_Power'] = np.cumsum(data['Power'])
+fig = px.bar(data, x="Completion", y="Cumulative_Power")
+# fig.add_trace(go.bar(x=wind_farms["Completion"], y=np.cumsum(wind_farms["Power"]), name = 'Wind Power', bar=dict(color='green', width=2)))
+fig.update_layout(title="Wind Farm Project Completions (Cumulative Power Capacity by Month)", legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
+fig.show()
+'''
 
 # Latitude and Longitude of a central point in the UK (around Birmingham)
 uk_coords = [52.4862, -1.8904]
@@ -61,7 +71,10 @@ uk_coords = [52.4862, -1.8904]
 uk_map = folium.Map(location=uk_coords, 
                     zoom_start=5,
                     tiles=None,  
-                    max_bounds=True)
+                    max_bounds=True
+                    )
+
+#print(wind_farms)
 
 # Add markets at each wind farm location
 for i, row in wind_farms.iterrows():
@@ -78,17 +91,14 @@ for i, row in wind_farms.iterrows():
             ).add_to(uk_map)
 
         # Overlay your image
-        img_bounds = [(48.9, -8.65), (60.6, 2.5)]  # Example bounds, adjust to fit your image
+        img_bounds = [(49.7, -9.25), (59.00, 3.9)]  # Example bounds, adjust to fit your image
 
         folium.raster_layers.ImageOverlay(
-            image="uk_map_overlay.jpg",
+            image="uk_map_grey.png",
             bounds=img_bounds,
-            opacity=0.5,
             interactive=True,                
             cross_origin=False,
-            zindex=1,
-            tiles=None,  # `tiles=None` to start with a blank slate
-            max_bounds=True
+            zindex=1
         ).add_to(uk_map)
         
         # Restrict the viewable area to the image bounds and limit zoom
