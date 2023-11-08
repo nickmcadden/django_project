@@ -8,19 +8,12 @@ import pickle as pkl
 import lxml
 import plotly.express as px
 import plotly.graph_objects as go
+import time
 from bs4 import BeautifulSoup
 
-# Read the historical wind speed data from some locations around the UK
-location_geocode_data = {'Bracknell' : (51.4136, -0.7505), 
-                         'Cardiff': (51.48, -3.18),
-                         'Leeds' : (53.7965, -1.5478),
-                         'Belfast': (54.5968, -5.9254),
-                         'Edinburgh': (55.9521, -3.1965),
-                         'Inverness': (57.4791, -4.224),
-                         'Norwich': (52.6278, 1.2983),
-                         'Hull': (53.7446, -0.3352),
-                         'Carlisle': (54.8951, -2.9382)}
 
+location_geocode_data = settings.LOCATION_GEOCODE_DATA
+hourly_weather_variables = settings.HOURLY_WEATHER_VARIABLES
 
 # Read and format the windspeed data recorded at different locations around the UK
 def format_windspeed_data(location, df):
@@ -28,26 +21,27 @@ def format_windspeed_data(location, df):
     df['Hour'] = df['time'].str[11:13].astype(int)+1
     df.drop('time', axis=1, inplace=True)
     df = df[df['windspeed_10m'].isnull()==False]
-    df.rename(columns={"windspeed_10m": location+"_"+"windspeed_10m", 
-                       "winddirection_10m": location+"_"+"winddirection_10m",}, inplace=True)
+    new_columns = [location + '_' + i for i in hourly_weather_variables]
+    df.rename(columns=dict(zip(hourly_weather_variables, new_columns)), inplace=True)
     return df
 
 
-def read_wind_power_data(start_date):
-    csv_path = os.path.join(settings.DATA_DIR, 'ntn', 'GenerationbyFuelType_20220701_to_present.csv')
-    windpowerdata = pd.read_csv(csv_path, parse_dates=['startTimeOfHalfHrPeriod'], usecols=['startTimeOfHalfHrPeriod','settlementPeriod', 'wind'])
-    windpowerdata.columns = ['Date', 'HalfHourPeriod', 'Wind']
-    windpowerdata = windpowerdata[windpowerdata['HalfHourPeriod'].isnull()==False]
-    windpowerdata['Hour'] = np.ceil(windpowerdata['HalfHourPeriod'] / 2)
-    windpowerdata = windpowerdata.astype({"Hour": int})
-    windpowerdata = windpowerdata.groupby(['Date', 'Hour']).agg({'Wind' : 'mean'}).reset_index()
+def read_generation_training_data(start_date, generation_type):
+    windpowerdata = pd.read_csv(os.path.join(settings.DATA_DIR, 'generation_half_hourly.csv'), parse_dates=['date'], usecols=['date','period', generation_type])
+    windpowerdata = windpowerdata[windpowerdata['period'].isnull()==False]
+    windpowerdata['hour'] = np.ceil(windpowerdata['period'] / 2)
+    windpowerdata = windpowerdata.astype({"hour": int})
+    windpowerdata = windpowerdata.groupby(['date', 'hour']).agg({generation_type : 'mean'}).reset_index()
+    windpowerdata.columns = ['Date', 'Hour', 'Power']
     return windpowerdata
 
 
-def read_training_data(start_date):
-    windpowerdata = read_wind_power_data(start_date)
-    historical_data_url = "https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date="+str(start_date)+"&end_date=2023-08-01&hourly=windspeed_10m,winddirection_10m"
-    
+def read_training_data(generation_type):
+    # make this a config setting
+    start_date='2022-08-01'
+    end_date=str(pd.Timestamp.today())[:10]
+    windpowerdata = read_generation_training_data(start_date, generation_type)
+    historical_data_url = "https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date="+str(start_date)+"&end_date="+str(end_date)+"&hourly=" + ",".join(hourly_weather_variables)
     windspeeddata = {}
     
     for i, location in enumerate(location_geocode_data.items()):
@@ -56,13 +50,13 @@ def read_training_data(start_date):
         windspeeddata[i] = format_windspeed_data(location[0], pd.DataFrame(data.json()['hourly']))
         windpowerdata = windpowerdata.merge(windspeeddata[i], on=['Date', 'Hour'])
     
+    windpowerdata.to_csv(os.path.join(settings.DATA_DIR, 'windpowerdata.csv'), index=False)
     return windpowerdata
 
 
 def read_forecast_data():
     forecast_data_url = "http://api.weatherapi.com/v1/forecast.json?key=c6d909ccb3044b41819172252232907&q={lat},{lon}&days=1"
     forecast_data = pd.DataFrame()
-    
     for i, location in enumerate(location_geocode_data.items()):
         jsondata = requests.get(forecast_data_url.format(lat=str(location[1][0]), lon=str(location[1][1])))
         print(location[0], jsondata.status_code)
@@ -76,14 +70,13 @@ def read_forecast_data():
         if len(forecast_data) == 0:
             forecast_data = forecast_temp[['Date', 'Hour']]
         forecast_data = forecast_data.merge(forecast_temp, on=['Date', 'Hour'])
-
+    
     return forecast_data
 
 
-def read_forecast_data_old(start_date):
-    forecast_data_url = 'https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={long}&hourly=windspeed_10m,winddirection_10m&past_days=92&forecast_days=10'
+def read_forecast_data_old():
+    forecast_data_url = 'https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={long}&past_days=92&forecast_days=10&hourly=' + ','.join(hourly_weather_variables)
     forecast_data = pd.DataFrame()
-
     for i, location in enumerate(location_geocode_data.items()):
         data = requests.get(forecast_data_url.format(lat=str(location[1][0]), long=str(location[1][1])), verify=False)
         print(location[0], data.status_code)
@@ -136,7 +129,7 @@ def update_data(base, update):
     # Any existing rows will be replaced based on a match with the index
     base.set_index(['date', 'period'], inplace=True)
     update.set_index(['date', 'period'], inplace=True)
-    data = base.combine_first(update)
+    data = update.combine_first(base)
     return data.reset_index()
 
 
@@ -194,6 +187,7 @@ def read_power_generation_data():
     # Call the external data for the updates to the ntn and grid data
     ntn_data = xml_to_dataframe(requests.get("https://www.bmreports.com/bmrs/?q=ajax/xml_download/FUELHH/xml/").content, "//responseList/item")
     ntn_data = format_ntn_data(ntn_data)
+    
     grid_data = pd.read_csv("https://data.nationalgrideso.com/backend/dataset/7a12172a-939c-404c-b581-a6128b74f588/resource/177f6fa4-ae49-4182-81ea-0c6b35f26ca6/download/demanddataupdate.csv", parse_dates=['SETTLEMENT_DATE'])
     grid_data = format_grid_data(grid_data)
     

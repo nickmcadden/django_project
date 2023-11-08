@@ -19,4 +19,8 @@ from . import views
 
 urlpatterns = [
     path('', views.index_view, name='index'),
+    path('index.html', views.index_view, name='index'),
+    path('models.html', views.model_view, name='models'),
+    path('map.html', views.map_view, name='map'),
+    path('test.html', views.test_view, name='test'),
 ]

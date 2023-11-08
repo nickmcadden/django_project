@@ -208,6 +208,20 @@ def plot_sunburst_chart(data, heading):
     return fig_go
 
 
+def format_generation_type_text(generation_type):
+    # Creates a text formatted version of the generation type
+    match generation_type:
+        case 'wind(offshore)':
+            text = 'Offshore Wind Power'
+        case 'wind(onshore)':
+            text = 'Onshore Wind Power'
+        case 'solar':
+            text = 'Solar Power'
+        case 'hydro':
+            text = 'Hydro Power'
+    return text
+
+
 def show_power_chart(data, period):
     # filter the data based on the period
     match period:
@@ -232,29 +246,46 @@ def show_power_chart(data, period):
     return fig_go
 
 
-def show_model_evaluation(daily_training, daily_forecast):
+def show_forecast_vs_actual(grid_generation, generation_type, forecast_today):
     # Create a plot of the daily forecast vs recorded wind power
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=daily_training["Date"], y=daily_training["Wind"], name = 'Wind Power', line=dict(color='green', width=2)))
-    fig.add_trace(go.Scatter(x=daily_forecast["Date"], y=daily_forecast["Forecast_Ensemble"], name='Forecast (MW)', line=dict(color='royalblue', width=2)))
-    fig.update_layout(title="Model Training Performance", legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
-    #fig.update_layout(legend=dict(orientation="h",yanchor="bottom",y=1.02,xanchor="right",x=1))
+    fig.add_trace(go.Scatter(x=grid_generation["hour"], y=grid_generation[generation_type], name = format_generation_type_text(generation_type), line=dict(color='green', width=2)))
+    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Stack"], name = 'Ensemble Forecast', line=dict(color='royalblue', width=2)))
+    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_0"], name = 'Neural Network Model', line=dict(color='lightgrey', width=1)))
+    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_1"], name = 'Random Forest Model', line=dict(color='lightsteelblue', width=1)))
+    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_2"], name = 'XGBoost Model', line=dict(color='lightslategrey', width=1)))
+    fig.update_layout(title=format_generation_type_text(generation_type) + " Forecast (MW) " + pd.Timestamp.today().strftime("%A %d %B"), showlegend=True)
+    fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.99))
+    fig.update_xaxes(nticks=10)
+    fig.update_layout(hovermode="x unified")
     return fig
 
-
-def show_todays_forecast(forecast_today):
+    
+def show_forecast_models(forecast_today):
     # Create a plot of hourly forecast for today vs recorded wind power
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_0"], name = 'Forecast 0', line=dict(color='lightgrey', width=2)))
-    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_1"], name = 'Forecast 1', line=dict(color='lightslategrey', width=2)))
-    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_2"], name = 'Forecast 2', line=dict(color='lightsteelblue', width=2)))
-    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Stack"], name = 'Ensemble 1 (XGBoost)', line=dict(color='royalblue', width=2)))
-    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Ensemble"], name = 'Ensemble 2 (weighted)', line=dict(color='cadetblue', width=2)))
-    fig.update_layout(title="UK Wind Power Forecast (MW) " + pd.Timestamp.today().strftime("%A %d %B"), showlegend=True)
+    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Stack"], name = 'Ensemble Forecast', line=dict(color='royalblue', width=2)))
+    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_0"], name = 'Neural Network Model', line=dict(color='lightgrey', width=1)))
+    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_1"], name = 'Random Forest Model', line=dict(color='lightsteelblue', width=1)))
+    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_2"], name = 'XGBoost Model', line=dict(color='lightslategrey', width=1)))
+    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Ensemble"], name = 'Ensemble 2 (weighted)', line=dict(color='cadetblue', width=1)))
+    fig.update_layout(title="Comparison of Forecasts by Model Type ", showlegend=True)
     fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.99))
+    fig.update_xaxes(nticks=10) 
     #fig.update_layout(legend=dict(orientation="h",yanchor="bottom",y=1.02,xanchor="right",x=1))
     #fig.update_xaxes(minor=dict(ticks="inside", showgrid=True, dtick=60*60*1000,), ticklabelmode="period", tickformat="%H:%M%p")
     #fig.update_yaxes(tickformat=",.0f")
+    return fig
+
+
+def show_model_evaluation(grid_generation, generation_type, forecast):
+    # Create a plot of the daily forecast vs recorded wind power
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=grid_generation["date"], y=grid_generation[generation_type], name = format_generation_type_text(generation_type), line=dict(color='green', width=2)))
+    fig.add_trace(go.Scatter(x=forecast["Date"], y=forecast["Forecast_Ensemble"], name='Forecast (MW)', line=dict(color='royalblue', width=2)))
+    fig.update_layout(title="Model Training Performance", legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
+    fig.update_layout(hovermode="x unified")
+    #fig.update_layout(legend=dict(orientation="h",yanchor="bottom",y=1.02,xanchor="right",x=1))
     return fig
 
 
@@ -266,22 +297,21 @@ def show_all_time_generation(grid_generation_all):
     fig.add_trace(go.Scatter(x=grid_generation_all["month"], y=grid_generation_all["wind(onshore)"], name = 'Wind (onshore)', line=dict(color='lawngreen', width=2)))
     fig.add_trace(go.Scatter(x=grid_generation_all["month"], y=grid_generation_all["solar"], name = 'Solar', line=dict(color='yellow', width=2)))
     fig.add_trace(go.Scatter(x=grid_generation_all["month"], y=grid_generation_all["hydro"], name = 'Hydro', line=dict(color='mediumaquamarine', width=2)))
-    fig.update_layout(title="UK Renewable Power Generation (MW) ", showlegend=True)
+    fig.update_layout(title="UK Renewable Power Generation (MW) Monthly<br><sub>Avg daily generation</sub>", showlegend=True)
     fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
     fig.update_xaxes(nticks=10) 
     return fig
+    
 
-
-def show_forecast_vs_actual(grid_generation_today, forecast_today):
-    # Create a plot of the daily forecast vs recorded wind power
+def show_all_time_generation_bar(grid_generation_all):
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=grid_generation_today["hour"], y=grid_generation_today["wind(offshore)"], name = 'Wind Power', line=dict(color='green', width=2)))
-    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Ensemble"], name = 'Ensemble Forecast', line=dict(color='royalblue', width=2)))
-    fig.update_layout(title="UK Wind Power Forecast (MW) " + pd.Timestamp.today().strftime("%A %d %B"), showlegend=True)
-    fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.99))
-    #fig.update_layout(legend=dict(orientation="h",yanchor="bottom",y=1.02,xanchor="right",x=1))
-    #fig.update_xaxes(minor=dict(ticks="inside", showgrid=True, dtick=60*60*1000,), ticklabelmode="period", tickformat="%H:%M%p")
-    #fig.update_yaxes(tickformat=",.0f")
+    fig.add_trace(go.Bar(x=grid_generation_all["year"], y=grid_generation_all["wind(offshore)"], name="Wind(offshore)", marker_color='seagreen'))
+    fig.add_trace(go.Bar(x=grid_generation_all["year"], y=grid_generation_all["wind(onshore)"], name="Wind(onshore)", marker_color='lawngreen'))
+    fig.add_trace(go.Bar(x=grid_generation_all["year"], y=grid_generation_all["solar"], name="Solar", marker_color='yellow'))
+    fig.add_trace(go.Bar(x=grid_generation_all["year"], y=grid_generation_all["hydro"], name="Hydro", marker_color='mediumaquamarine'))
+    fig.update_layout(title="UK Renewable Power Generation (MW) Yearly<br><sub>Avg daily generation</sub>", showlegend=True, barmode='stack')
+    fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
+    fig.update_xaxes(nticks=10) 
     return fig
 
 

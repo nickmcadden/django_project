@@ -1,0 +1,55 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+	{{folium_header|safe}}
+	<link href="{% static 'base.css' %}" rel="stylesheet">
+    <link href="{% static 'style.css' %}" rel="stylesheet">
+    <title>Wind Power Forecast</title>
+</head>
+<body>
+	<!-- Wrapper for the page -->
+	<div id="page-container">
+		<div id="page-header">
+			<h2>Daily Wind Power Forecast (MW)</h2>
+			<div id="navigation-bar">
+				<a href="index.html">Forecast Models</a> |
+				<a href="models.html">Model Evaluation</a> |
+			    <a href="map.html">UK Renewables Map</a>
+			</div>
+		</div>
+		<div id="page-content">
+    		<div id="left-container">
+				<div class="chart">{{ all_time_generation|safe }}</div>
+				<div class="chart">{{ all_time_generation_bar|safe }}</div>
+			</div>
+			<div id="right-container">
+				<!-- <div class="chart">{{ latest_generation|safe }}</div> 
+				<div class="chart">{{ map_html|safe }}</div>
+					<script type="text/javascript">
+						document.addEventListener("DOMContentLoaded", function() {
+					  	  	// Your marker-adding JavaScript code here
+							{{map_script|safe}}
+						});
+					</script>-->
+				<div class="data">{{ uk_wind_farms|safe }}</div>
+			</div>
+		</div>
+	</div>
+</body>
+<!-- Custom JavaScript to adjust map dimensions
+<script type="text/javascript">
+    window.onload = function() {
+        var mapDiv = document.querySelector('.folium-map');
+        if (mapDiv) {
+            mapDiv.style.width = '80%';   // Adjust width as desired
+            mapDiv.style.height = '500px';
+			mapDiv.style.backgroundColor = '#ffffff';
+        }
+		window.dispatchEvent(new Event('resize'));
+    }
+</script>
+ -->
+</html>

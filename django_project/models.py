@@ -3,15 +3,46 @@ import pandas as pd
 import xgboost
 import pickle as pkl
 import os
+import datetime
 from django_project import data
 from django.conf import settings
+from sklearn.neural_network import MLPRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import ElasticNet
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import KFold
 from sklearn.metrics import mean_absolute_error
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
+
+def show_model_error(chart_data):
+    # Create a plot of the daily forecast vs recorded wind power
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=chart_data["forecast_lag"], y=chart_data["absolute_error"], name = 'Model Error', line=dict(color='green', width=2)))
+    fig.update_layout(title="Model Error (MW) vs Prediction Time Lag (Hours)", legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
+    return fig
+
+
+def evaluate_forecast(generation_data, generation_type):
+    if os.path.isfile(os.path.join('data', 'saved_forecasts.pickle')):
+        print("Saved forecasts found") 
+        saved_forecasts = pd.read_csv(os.path.join('data', 'saved_forecasts.csv'), parse_dates=['Created_at', 'Date'], index_col=False)
+        saved_forecasts = saved_forecasts[saved_forecasts['Generation_type']==generation_type]
+    else:
+        print("Missing forecast data")
+    generation_data['forecast_date_hour'] = generation_data['date'] + pd.to_timedelta((generation_data['period']-1)/2, unit='h')    
+    generation_data['hour'] = (generation_data['period']-1)/2
+    evaluation_data = saved_forecasts.merge(generation_data, left_on=['Date', 'Hour'], right_on=['date', 'hour'])  
+    evaluation_data = evaluation_data[evaluation_data['Created_at']<=evaluation_data['forecast_date_hour']]
+    evaluation_data['forecast_lag'] = np.round((evaluation_data['forecast_date_hour'] - evaluation_data['Created_at']).dt.total_seconds() / 3600)
+    evaluation_data['absolute_error'] = np.abs(evaluation_data[generation_type] - evaluation_data['Forecast_Stack']) 
+    evaluation_data = evaluation_data[['forecast_date_hour', 'Created_at', 'forecast_lag', generation_type, 'Forecast_Stack', 'absolute_error']]
+    evaluation_data.to_csv('evaluation_data.csv', index=False)
+    chart_data = evaluation_data.copy().groupby(['forecast_lag']).agg({'absolute_error':'mean'}).reset_index()
+    fig_model_evaluation = show_model_error(chart_data)
+    fig_model_evaluation.show()
+    return
+    
 
 def transform_angle(a):
     a = a - 32
@@ -35,39 +66,56 @@ def create_lr_features(X):
     return X
 
 
+def scale_data(X, scaler=None):
+    if scaler == None:
+        scaler = StandardScaler()
+        X = scaler.fit_transform(X.copy())
+    else:
+        X = scaler.transform(X.copy())
+    return X, scaler
+
+
 def create_features(X, model):
-    # Input fields for the model
-    base_features = ['Hour', 'Bracknell_windspeed_10m', 'Bracknell_winddirection_10m', 
-                        'Cardiff_windspeed_10m', 'Cardiff_winddirection_10m',
-                        'Leeds_windspeed_10m', 'Leeds_winddirection_10m',
-                        'Belfast_windspeed_10m', 'Belfast_winddirection_10m',
-                        'Edinburgh_windspeed_10m', 'Edinburgh_winddirection_10m',
-                        'Inverness_windspeed_10m', 'Inverness_winddirection_10m',
-                        'Norwich_windspeed_10m', 'Norwich_winddirection_10m',
-                        'Hull_windspeed_10m', 'Hull_winddirection_10m',
-                        'Carlisle_windspeed_10m', 'Carlisle_winddirection_10m']
-    
+    # Create a list of all the variables to add to the model (not all of the base data can be used to predict with)
+    base_features = ['Hour']
+    # Create all the variables from combinations of all locations and hourly weather variables
+    for i in settings.LOCATION_GEOCODE_DATA.keys():
+        for j in settings.HOURLY_WEATHER_VARIABLES:
+            base_features.append(i+'_'+j)
+
     # create some feature within the dataframe
     X['DayofYear'] = X['Date'].dt.day_of_year
-    X['DayofYearLr'] =  500 - (np.abs(X['DayofYear'] - 45))
-    X = X[base_features+['DayofYear', 'DayofYearLr']]
+    # This assigns a weight to the day of year for the linear model to give most weight to middle of February
+    X['DayofYearLr'] =  np.abs(45 - (np.abs(X['DayofYear'] - 45)) + 137)
+    # This assigns a weight to the day of year day of year to give most weight to 21st June where the day is longer
+    X['DayofYearAdj'] =  np.abs(172.25 - (np.abs(X['DayofYear'] - 172.25)) + 10)
+    # This function is to simulate the number of hours of light in the day
+    X['DayLength'] = 7.83 + 8.8 * np.sin(np.pi/2 * X['DayofYearAdj'] / 172.25)
+    X = X[base_features+['DayofYear', 'DayofYearLr', 'DayofYearAdj', 'DayLength']]
     if model.__module__ == 'sklearn.linear_model._base':
         X = np.concatenate((X.values, create_lr_features(X[base_features])), axis=1)
     else:
         X = X.values
-    return X
+    return np.nan_to_num(X)
 
 
-def show_training_score(data, oob):
+def show_training_score(generation_type, model, data, oob):
     data['oob'] = oob
     # Calculate the mean absolute error hourly
-    hourly_mean_error = np.round(np.mean(np.abs(data['Wind'] - oob)))
+    hourly_mean_error = np.round(np.mean(np.abs(data['Power'] - oob)))
     # Calculate the mean absolute error at a daily level
     daily_data = data.groupby('Date').mean().reset_index()
-    daily_mean_error = np.round(np.mean(np.abs(daily_data['Wind'] - daily_data['oob'])))
+    daily_mean_error = np.round(np.mean(np.abs(daily_data['Power'] - daily_data['oob'])))
     # Print the training errors
     print('Hourly mean error', hourly_mean_error, 'MW')
     print('Daily mean error', daily_mean_error, 'MW')
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(os.path.join(settings.DATA_DIR, 'model_revision_changelog.txt'), 'a') as f:
+        f.write(ts + '\n')
+        f.write(generation_type + ' ' + str(model.__module__) + '\n')
+        f.write('Hourly mean error ' + str(hourly_mean_error) + ' MW\n')
+        f.write('Daily mean error ' + str(daily_mean_error) + ' MW\n\n')
+        f.close()
     return
 
 
@@ -86,66 +134,80 @@ def cross_validate_and_fit_model(X, y, model, n_splits=5):
     return model, oob
 
 
-def create_model(): 
-    if os.path.isfile(os.path.join(settings.DATA_DIR, 'ensemble_model.pickle')):
+def create_model(generation_type):
+    if os.path.isfile(os.path.join(settings.DATA_DIR, 'ensemble_model_' + generation_type + '.pickle')):
         print("Saved model found")
-        ensemble_model = pkl.load(open(os.path.join(settings.DATA_DIR, 'ensemble_model.pickle'), "rb"))
+        ensemble_model = pkl.load(open(os.path.join(settings.DATA_DIR, 'ensemble_model_'+generation_type+'.pickle'), "rb"))
         training_prediction = ensemble_model['data']
+        scaler = ensemble_model['scaler']
+        model_n = ensemble_model['model_n']
         model_a = ensemble_model['model_a']
         model_b = ensemble_model['model_b']
         model_c = ensemble_model['model_c']
         model_d = ensemble_model['model_d']
     else:
         # Test 3 types of predictive model
+        model_n = MLPRegressor(hidden_layer_sizes=(256, 256), activation='relu', solver='adam', random_state=42, max_iter=6000, verbose=False, learning_rate_init=0.1, alpha=0.01)
         model_a = RandomForestRegressor(n_estimators=25, max_depth=12, min_samples_leaf=1)
         model_b = xgboost.XGBRegressor(tree_method="hist", eval_metric=mean_absolute_error, max_depth=12, min_child_weight=2)
         model_c = LinearRegression()
         model_d = xgboost.XGBRegressor(tree_method="hist", eval_metric=mean_absolute_error, max_depth=12, min_child_weight=2)
         
-        base_data = data.read_training_data(start_date='2022-08-01')
-        training_prediction = base_data.copy()[['Date', 'Hour', 'Wind']]
+        base_data = data.read_training_data(generation_type)
+        training_prediction = base_data.copy()[['Date', 'Hour', 'Power']]
         
         # Cross validate and fit each model on the training data
-        model_list = [model_a, model_b, model_c]
+        model_list = [model_n, model_a, model_b, model_c]
         oob_features = np.zeros((len(base_data), len(model_list)))
         
         for i, model in enumerate(model_list):
             X = create_features(base_data, model)
-            y = base_data['Wind'].to_numpy()
+            if model == model_n:
+                X, scaler = scale_data(X, None)
+            y = base_data['Power'].to_numpy()
             model, oob = cross_validate_and_fit_model(X, y, model, n_splits=5)
-            show_training_score(base_data, oob)
+            show_training_score(generation_type, model, base_data, oob)
             oob_features[:,i] = oob
-            training_prediction.loc[:, 'Training_Prediction_' + str(i)] = np.clip(model.predict(X) ,1000 , 16000)
+            training_prediction.loc[:, 'Training_Prediction_' + str(i)] = np.clip(model.predict(X), 0 , 16000)
         
         # cv and create new model with the oob data added with XGBoost 
         X = create_features(base_data, model_d)
         X = np.append(X, oob_features, axis=1)
         model, oob = cross_validate_and_fit_model(X, y, model_d, n_splits=5)
-        show_training_score(base_data, oob)
-        training_prediction.loc[:, 'Training_Prediction_' + str(i)] = np.clip(model.predict(X) ,1000 , 16000)
-        ensemble_model = {'data':training_prediction, 'model_a':model_a, 'model_b':model_b, 'model_c':model_c, 'model_d':model_d}
-        pkl.dump(ensemble_model, open(os.path.join(settings.DATA_DIR, 'ensemble_model.pickle'), 'wb'))
+        show_training_score(generation_type, model_d, base_data, oob)
+        
+        training_prediction.loc[:, 'Training_Prediction_' + str(i)] = np.clip(model.predict(X), 0 , 16000)
+        ensemble_model = {'data':training_prediction, 'scaler':scaler, 'model_n':model_n, 'model_a':model_a, 'model_b':model_b, 'model_c':model_c, 'model_d':model_d}
+        pkl.dump(ensemble_model, open(os.path.join(settings.DATA_DIR, 'ensemble_model_'+generation_type+'.pickle'), 'wb'))
     
-    return training_prediction, model_a, model_b, model_c, model_d
+    return training_prediction, scaler, model_n, model_a, model_b, model_c, model_d
     
 
-def save_forecast(forecast):
+def save_forecast(forecast, generation_type):
     # The forecast data contains a mixture of historical data and data for the next few days
     # For the evaluation we only need to keep the forecasts on the future data (where the generation forecast might change as the weather forecast changes)
     forecast = forecast.copy()[forecast['Date']>=pd.Timestamp.today().floor('D')]
-    forecast['created_at'] = pd.Timestamp.now()
+    forecast_columns = ['Created_at', 'Generation_type'] + list(forecast.columns)
+    # Add a timestamp and the forecast type to the dataframe
+    forecast['Created_at'] = pd.Timestamp.now()
+    forecast['Generation_type'] = generation_type
     if os.path.isfile(os.path.join(settings.DATA_DIR, 'saved_forecasts.pickle')):
         print("Saved forecasts found")
         saved_forecasts = pkl.load(open(os.path.join(settings.DATA_DIR, 'saved_forecasts.pickle'), "rb"))
         saved_forecasts = pd.concat([saved_forecasts, forecast])
     else:
+        print("Saving Forecast")
         saved_forecasts = forecast
+    print(forecast)
+    # Give the dataframe a better column order for reading and save the files
+    saved_forecasts = saved_forecasts[forecast_columns]
     saved_forecasts.to_csv(os.path.join(settings.DATA_DIR, 'saved_forecasts.csv'), index=False)
     pkl.dump(saved_forecasts, open(os.path.join(settings.DATA_DIR, 'saved_forecasts.pickle'), "wb"))
     return
 
+
 def evaluate_forecast(generation_data):
-    if os.path.isfile(os.path.join(settings.DATA_DIR, 'saved_forecasts.pickle')):
+    if os.path.isfile(os.path.join(settings.DATA_DIR, 'saved_forecasts.csv')):
         print("Saved forecasts found")
         saved_forecasts = pkl.load(open(os.path.join(settings.DATA_DIR, 'saved_forecasts.pickle'), 'rb'))
     else:
@@ -154,25 +216,36 @@ def evaluate_forecast(generation_data):
     return
 
 
-def create_forecast(forecast_data):
-    training_prediction, model_a, model_b, model_c, model_d = create_model()
-    forecast = forecast_data.copy()[['Date', 'Hour']]
-    # Make a prediction on the forecast data with each model
-    print('\nMaking forecast with trained models')
-    for j, model in enumerate([model_a, model_b, model_c]):
+def create_forecast(generation_type):
+    forecast_file = os.path.join(settings.DATA_DIR, 'forecast_' + generation_type + '.pickle')
+    # Load the current forecast file if there is one, and it has been recently created
+    if os.path.isfile(forecast_file) and (datetime.datetime.now() - datetime.datetime.fromtimestamp(os.path.getmtime(forecast_file))).seconds < 1:
+        print(generation_type, "forecast found")
+        forecast = pkl.load(open(forecast_file, 'rb'))
+    else:
+        forecast_data = data.read_forecast_data_old()
+        forecast = forecast_data.copy()[['Date', 'Hour']]
+        training_prediction, scaler, model_n, model_a, model_b, model_c, model_d = create_model(generation_type)
         # Make a prediction on the forecast data with each model
-        X = create_features(forecast_data, model)
-        forecast['Forecast_' + str(j)] = np.clip(model.predict(X),1000,16000)
+        print('\nMaking forecast with trained models')
+        for j, model in enumerate([model_n, model_a, model_b, model_c]):
+            # Make a prediction on the forecast data with each model
+            X = np.nan_to_num(create_features(forecast_data, model))
+            if model == model_n:
+                X, scaler = scale_data(X, scaler)
+            forecast['Forecast_' + str(j)] = model.predict(X)
+        
+        # Add the forecasts for the other models to the training data and create a forecast with the stacked model
+        X = create_features(forecast_data, model_d)
+        X = np.append(X, forecast[['Forecast_0', 'Forecast_1', 'Forecast_2', 'Forecast_3']].values, axis=1)
+        forecast['Forecast_Stack'] = model_d.predict(X)
+        
+        # Create Ensemble Forecast
+        forecast['Forecast_Ensemble'] = forecast['Forecast_0'] * 0.4 + \
+                                        forecast['Forecast_1'] * 0.4 + \
+                                        forecast['Forecast_2'] * 0.2
+        
+        pkl.dump(forecast, open(forecast_file, 'wb'))
+        save_forecast(forecast, generation_type)
     
-    # Add the forecasts for the other models to the training data and create a forecast with the stacked model
-    X = create_features(forecast_data, model_d)
-    X = np.append(X, forecast[['Forecast_0', 'Forecast_1', 'Forecast_2']].values, axis=1)
-    forecast['Forecast_Stack'] = np.clip(model_d.predict(X),1000,16000)
-    
-    # Create Ensemble Forecast (Currently XGBoost results can't be improved with other model combination)
-    forecast['Forecast_Ensemble'] = forecast['Forecast_0'] * 0.4 + \
-                                    forecast['Forecast_1'] * 0.4 + \
-                                    forecast['Forecast_2'] * 0.2
-    save_forecast(forecast)
-
-    return training_prediction, forecast
+    return forecast

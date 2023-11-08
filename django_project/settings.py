@@ -17,6 +17,19 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 
+# These variables are the paramters for the model
+LOCATION_GEOCODE_DATA = {'Bracknell' : (51.4136, -0.7505), 
+                         'Cardiff': (51.48, -3.18),
+                         'Leeds' : (53.7965, -1.5478),
+                         'Belfast': (54.5968, -5.9254),
+                         'Edinburgh': (55.9521, -3.1965),
+                         'Inverness': (57.4791, -4.224),
+                         'Norwich': (52.6278, 1.2983),
+                         'Hull': (53.7446, -0.3352),
+                         'Carlisle': (54.8951, -2.9382)}
+                         
+HOURLY_WEATHER_VARIABLES = ['windspeed_10m','winddirection_10m','cloudcover','surface_pressure','temperature_2m','precipitation','rain','terrestrial_radiation']
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
@@ -115,7 +128,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
 STATIC_URL = 'static/'
-STATICFILES_DIRS = [os.path.join(BASE_DIR, "static"),]
+STATICFILES_DIRS = [os.path.join(BASE_DIR, "django_project", "static"),]
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
