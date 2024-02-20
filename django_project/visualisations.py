@@ -7,6 +7,46 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 import plotly.io as pio
+from plotly.subplots import make_subplots
+
+
+def get_evaluation_data(generation_data, generation_type):
+    """
+    Evaluates the accuracy of the forecast vs time lag from when the forecast was made.
+    This will need data collected at least once a day for a few weeks to get a true picture of accuracy.
+    """
+
+    if os.path.isfile(os.path.join(settings.DATA_DIR, 'saved_forecasts.pickle')):
+        print("Saved forecasts found")
+        saved_forecasts = pd.read_csv(os.path.join(settings.DATA_DIR, 'saved_forecasts.csv'), parse_dates=['Created_at', 'Date'], index_col=False)
+        saved_forecasts = saved_forecasts[saved_forecasts['Generation_type']==generation_type]
+        print(len(saved_forecasts), len(generation_data))
+    else:
+        print("Missing forecast data")
+    generation_data['forecast_date_hour'] = generation_data['date'] + pd.to_timedelta((generation_data['period']-1)/2, unit='h')    
+    generation_data['hour'] = (generation_data['period']-1)/2
+    evaluation_data = saved_forecasts.merge(generation_data, left_on=['Date', 'Hour'], right_on=['date', 'hour'])  
+    evaluation_data = evaluation_data[evaluation_data['Created_at']<=evaluation_data['forecast_date_hour']]
+    evaluation_data['forecast_lag'] = np.round((evaluation_data['forecast_date_hour'] - evaluation_data['Created_at']).dt.total_seconds() / 3600)
+    evaluation_data['absolute_error'] = np.abs(evaluation_data[generation_type] - evaluation_data['Forecast_Stack']) 
+    evaluation_data = evaluation_data[['forecast_date_hour', 'Created_at', 'forecast_lag', generation_type, 'Forecast_Stack', 'absolute_error']]
+    evaluation_data.to_csv('evaluation_data2.csv', index=False)
+    chart_data = evaluation_data.copy().groupby(['forecast_lag']).agg({'absolute_error':'mean'}).reset_index()
+    return chart_data
+
+
+def evaluate_forecast_timelag(generation_data, generation_types):
+    chart_colours = {'wind(offshore)':'seagreen',
+                    'wind(onshore)': 'lawngreen',
+                    'solar': 'yellow'}
+    # Create a plot of the daily forecast vs recorded generated power by generation_type by time lag from the prediction
+    fig = go.Figure()
+    for i, generation_type in enumerate(generation_types):
+        chart_data = get_evaluation_data(generation_data, generation_type)
+        print(chart_data)
+        fig.add_trace(go.Scatter(x=chart_data["forecast_lag"], y=chart_data["absolute_error"], name = generation_type, line=dict(color=chart_colours[generation_type], width=2)))
+    fig.update_layout(title="Model Error (MW) vs Prediction Time Lag (Hours)", legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
+    return fig
 
 
 def dms_string_to_decimal(dms_str):
@@ -249,18 +289,18 @@ def show_power_chart(data, period):
 def show_forecast_vs_actual(grid_generation, generation_type, forecast_today):
     # Create a plot of the daily forecast vs recorded wind power
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=grid_generation["hour"], y=grid_generation[generation_type], name = format_generation_type_text(generation_type), line=dict(color='green', width=2)))
-    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Stack"], name = 'Ensemble Forecast', line=dict(color='royalblue', width=2)))
     fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_0"], name = 'Neural Network Model', line=dict(color='lightgrey', width=1)))
     fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_1"], name = 'Random Forest Model', line=dict(color='lightsteelblue', width=1)))
     fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_2"], name = 'XGBoost Model', line=dict(color='lightslategrey', width=1)))
+    fig.add_trace(go.Scatter(x=forecast_today["Hour"], y=forecast_today["Forecast_Stack"], name = 'Ensemble Forecast', line=dict(color='royalblue', width=2)))
+    fig.add_trace(go.Scatter(x=grid_generation["hour"], y=grid_generation[generation_type], name = format_generation_type_text(generation_type), line=dict(color='green', width=2)))
     fig.update_layout(title=format_generation_type_text(generation_type) + " Forecast (MW) " + pd.Timestamp.today().strftime("%A %d %B"), showlegend=True)
     fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.99))
     fig.update_xaxes(nticks=10)
     fig.update_layout(hovermode="x unified")
     return fig
 
-    
+
 def show_forecast_models(forecast_today):
     # Create a plot of hourly forecast for today vs recorded wind power
     fig = go.Figure()
@@ -301,17 +341,66 @@ def show_all_time_generation(grid_generation_all):
     fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
     fig.update_xaxes(nticks=10) 
     return fig
-    
+
+'''
+function shadeColor(color, percent) {
+
+    var R = parseInt(color.substring(1,3),16);
+    var G = parseInt(color.substring(3,5),16);
+    var B = parseInt(color.substring(5,7),16);
+
+    R = parseInt(R * (100 + percent) / 100);
+    G = parseInt(G * (100 + percent) / 100);
+    B = parseInt(B * (100 + percent) / 100);
+
+    R = (R<255)?R:255;  
+    G = (G<255)?G:255;  
+    B = (B<255)?B:255;  
+
+    R = Math.round(R)
+    G = Math.round(G)
+    B = Math.round(B)
+
+    var RR = ((R.toString(16).length==1)?"0"+R.toString(16):R.toString(16));
+    var GG = ((G.toString(16).length==1)?"0"+G.toString(16):G.toString(16));
+    var BB = ((B.toString(16).length==1)?"0"+B.toString(16):B.toString(16));
+
+    return "#"+RR+GG+BB;
+}
+'''
 
 def show_all_time_generation_bar(grid_generation_all):
+    seagreen = ['seagreen',] *9 + ['#6ebd91']
+    lawngreen = ['lawngreen',] *9 + ['#b2ff68']
+    yellow = ['yellow',] *9 + ['#fcfd70']
+    mediumaquamarine = ['mediumaquamarine',] *9 + ['#a6e8d2']
+    
+    # Alternative colours -  #51a776 , #b2ff68,  #fcfd70, #a6e8d2
+    # test use of a different colour in a single bar
+    # testcolour = ['yellow',] *10
+    # testcolour[10] = 'crimson'
+
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=grid_generation_all["year"], y=grid_generation_all["wind(offshore)"], name="Wind(offshore)", marker_color='seagreen'))
-    fig.add_trace(go.Bar(x=grid_generation_all["year"], y=grid_generation_all["wind(onshore)"], name="Wind(onshore)", marker_color='lawngreen'))
-    fig.add_trace(go.Bar(x=grid_generation_all["year"], y=grid_generation_all["solar"], name="Solar", marker_color='yellow'))
-    fig.add_trace(go.Bar(x=grid_generation_all["year"], y=grid_generation_all["hydro"], name="Hydro", marker_color='mediumaquamarine'))
-    fig.update_layout(title="UK Renewable Power Generation (MW) Yearly<br><sub>Avg daily generation</sub>", showlegend=True, barmode='stack')
+    fig.add_trace(go.Bar(x=grid_generation_all["year"], y=grid_generation_all["wind(offshore)"], name="Wind(offshore)", marker_color=seagreen))
+    fig.add_trace(go.Bar(x=grid_generation_all["year"], y=grid_generation_all["wind(onshore)"], name="Wind(onshore)", marker_color=lawngreen))
+    fig.add_trace(go.Bar(x=grid_generation_all["year"], y=grid_generation_all["solar"], name="Solar", marker_color=yellow))
+    fig.add_trace(go.Bar(x=grid_generation_all["year"], y=grid_generation_all["hydro"], name="Hydro", marker_color=mediumaquamarine))
+    fig.update_layout(title="UK Renewable Power Generation (MW) Yearly<br><sub>Avg daily generation - (including projection for current year)</sub>", showlegend=True, barmode='stack')
     fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
     fig.update_xaxes(nticks=10) 
+    return fig
+
+
+def show_all_time_carbon_bar(grid_generation_all):
+    crimson = ['crimson',] *9 + ['#e7607b']
+    orange = ['orange',] *9 + ['#fcbe4e']
+    #fec662, #e7607b
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=grid_generation_all["year"], y=grid_generation_all["coal"], name="Carbon", marker_color=crimson))
+    fig.add_trace(go.Bar(x=grid_generation_all["year"], y=grid_generation_all["ccgt"], name="Gas", marker_color=orange))
+    fig.update_layout(title="UK Carbon Power Generation (MW) Yearly<br><sub>Avg daily generation - (including projection for current year)</sub>", showlegend=True, barmode='stack')
+    fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.01))
+    fig.update_xaxes(nticks=10)
     return fig
 
 
@@ -324,6 +413,7 @@ def format_windfarm_data(uk_windfarms):
     uk_windfarms = uk_windfarms.sort_values(by=['Completion', 'Colour'], ascending=True)
     uk_windfarms = uk_windfarms.groupby(['Completion', 'Colour', 'Name']).sum().reset_index()
     uk_windfarms['Cumulative Power'] = np.cumsum(uk_windfarms['Power'])
+    uk_windfarms.to_csv('offshore_capacity_increase_by_month.csv')
     uk_windfarms = uk_windfarms[uk_windfarms['Completion']>=pd.Timestamp.today().floor('D')]
     uk_windfarms['Completion'] = uk_windfarms['Completion'].astype(str).apply(lambda x: x[:7])
     uk_windfarms.drop_duplicates(subset=['Completion'], keep='first', inplace=True)
@@ -343,5 +433,43 @@ def show_uk_wind_farms():
         textangle=45 # marker color can be a single color value or an iterable
     )])
     fig.update_layout(title_text="Offshore Wind Farm Completions (MW Capacity)")
-    fig.update_layout(width=500, height=400)
+    #fig.update_layout(width=500, height=400)
+    return fig
+
+  
+def show_demand_vs_renewables(fig, row, col, chart_data, plan_overview, group_by='month'):
+    renewable_sources_plus_battery = ['wind(offshore)', 'wind(onshore)', 'solar', 'hydro', 'battery_supplied']
+    carbon = ['carbon']
+    other_sources = ['nuclear', 'biomass']
+    
+    chart_data['month'] = chart_data['date'].to_numpy().astype('datetime64[M]')
+    chart_data['year'] = chart_data['date'].dt.year.astype('str')
+    chart_data['all'] = plan_overview['plan']
+    
+    # Group the data by month, year, or all
+    chart_data = chart_data.copy().groupby(group_by).mean().reset_index()
+    
+    # Calculate % contribution to demand for each source
+    for i in renewable_sources_plus_battery + other_sources + carbon:
+        chart_data[i+'_contribution'] = np.round(chart_data[i] / chart_data['demand'] * 100, 0)
+    
+    showlegend = (col == 1)
+    fig.add_trace(go.Bar(x=chart_data[group_by], y=chart_data["wind(offshore)_contribution"],text=chart_data["wind(offshore)_contribution"].apply(lambda x: '{0:1.0f}%'.format(x)), name="Wind(offshore)", legendgroup="Wind(offshore)", marker_color='seagreen' ,showlegend=showlegend), row=row, col=col)
+    fig.add_trace(go.Bar(x=chart_data[group_by], y=chart_data["wind(onshore)_contribution"], text=chart_data["wind(onshore)_contribution"].apply(lambda x: '{0:1.0f}%'.format(x)), name="Wind(onshore)",legendgroup="Wind(onshore)", marker_color='lawngreen', showlegend=showlegend), row=row, col=col)
+    fig.add_trace(go.Bar(x=chart_data[group_by], y=chart_data["solar_contribution"], text=chart_data["solar_contribution"].apply(lambda x: '{0:1.0f}%'.format(x)), name="Solar", legendgroup="Solar", marker_color='yellow' ,showlegend=showlegend), row=row, col=col)
+    fig.add_trace(go.Bar(x=chart_data[group_by], y=chart_data["hydro_contribution"], text=chart_data["hydro_contribution"].apply(lambda x: '{0:1.0f}%'.format(x)), name="Hydro", legendgroup="Hydro", marker_color='mediumaquamarine' ,showlegend=showlegend), row=row, col=col)
+    fig.add_trace(go.Bar(x=chart_data[group_by], y=chart_data["nuclear_contribution"], text=chart_data["nuclear_contribution"].apply(lambda x: '{0:1.0f}%'.format(x)), name="Nuclear", legendgroup="Nuclear", marker_color='ghostwhite' ,showlegend=showlegend), row=row, col=col)
+    fig.add_trace(go.Bar(x=chart_data[group_by], y=chart_data["biomass_contribution"], text=chart_data["biomass_contribution"].apply(lambda x: '{0:1.0f}%'.format(x)), name="Biomass", legendgroup="Biomass", marker_color='dodgerblue' ,showlegend=showlegend), row=row, col=col)
+    fig.add_trace(go.Bar(x=chart_data[group_by], y=chart_data["carbon_contribution"], text=chart_data["carbon_contribution"].apply(lambda x: '{0:1.0f}%'.format(x)), name="Carbon", legendgroup="Carbon", marker_color='lemonchiffon' ,showlegend=showlegend), row=row, col=col)
+    fig.add_trace(go.Bar(x=chart_data[group_by], y=chart_data["battery_supplied_contribution"], text=chart_data["battery_supplied_contribution"].apply(lambda x: '{0:1.0f}%'.format(x)), name="Battery", legendgroup="Battery", marker_color='blue' ,showlegend=showlegend), row=row, col=col)
+    fig.update_layout(title="UK Renewables % contribution to demand", barmode='stack')
+    return fig
+
+
+def show_capacity_projection(plans, plan_data):
+    fig = make_subplots(rows=1, cols=len(plans), shared_yaxes=True)
+
+    for i in range(len(plans)):
+        fig = show_demand_vs_renewables(fig, 1, i+1, plan_data[i], plans[i], 'all')
+    
     return fig

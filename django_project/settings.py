@@ -17,8 +17,11 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 
-# These variables are the paramters for the model
-LOCATION_GEOCODE_DATA = {'Bracknell' : (51.4136, -0.7505), 
+# The forecasts will be more accurate if the locations for the weather data are optimised for the type of renewable
+# More locations will need more API calls so try and keep to 10 locations for each type
+LOCATION_GEOCODE_DATA = {}
+
+LOCATION_GEOCODE_DATA['v1_locations'] = {'Bracknell' : (51.4136, -0.7505), 
                          'Cardiff': (51.48, -3.18),
                          'Leeds' : (53.7965, -1.5478),
                          'Belfast': (54.5968, -5.9254),
@@ -27,7 +30,46 @@ LOCATION_GEOCODE_DATA = {'Bracknell' : (51.4136, -0.7505),
                          'Norwich': (52.6278, 1.2983),
                          'Hull': (53.7446, -0.3352),
                          'Carlisle': (54.8951, -2.9382)}
-                         
+
+l_offset = 1
+for i in LOCATION_GEOCODE_DATA['v1_locations'].keys():
+    LOCATION_GEOCODE_DATA['v1_locations'][i] = (LOCATION_GEOCODE_DATA['v1_locations'][i][0]+l_offset, LOCATION_GEOCODE_DATA['v1_locations'][i][1]+l_offset)
+
+# Offshore is mainly produced off the east coast of the country                      
+LOCATION_GEOCODE_DATA['wind(offshore)'] = {'Moray East' : (58.1, -2.8), 
+                         'Walney': (54.05, -3.516),
+                         'Gwynty Mor' : (53.45, -3.583),
+                         'Rampion': (50.6, -0.266),
+                         'Lynn': (53.12, 0.436),
+                         'Triton Knoll': (53.5, 0.8),
+                         'Hornsea': (53.8, 1.791),
+                         'Thanet': (51.4, 1.633),
+                         'Kentish Flats': (51.46, 1.09)}
+
+# Onshore wind production is most concentrated in Scotland and the North of England    
+LOCATION_GEOCODE_DATA['wind(onshore)'] = {'Plymouth' : (50.37, -4.143), 
+                         'Cardiff': (51.48, -3.18),
+                         'Cambridge': (52.20, 0.119),
+                         'Hull': (53.74, -0.3352),
+                         'Leeds' : (53.79, -1.5478),
+                         'Belfast': (54.59, -5.9254),
+                         'Edinburgh': (55.95, -3.1965),
+                         'Inverness': (57.47, -4.224),
+                         'Kirkmuirhill': (55.65, -3.918),
+                         'Carlisle': (54.8951, -2.9382)}
+
+# Solar power is produced mostly in the south of England and the midlands
+LOCATION_GEOCODE_DATA['solar'] = {'Plymouth' : (50.37, -4.143), 
+                         'Cardiff': (51.48, -3.18),
+                         'Bournemouth' : (50.71, -1.883),
+                         'Dover': (51.12, 1.316),
+                         'Oxford': (51.75, -1.257),
+                         'Cambridge': (52.20, 0.119),
+                         'Mansfield': (53.13, -1.200),
+                         'Liverpool': (53.40, -2.983),
+                         'Belfast': (54.8951, -2.9382),
+                         'Edinburgh': (55.9521, -3.1965)}
+
 HOURLY_WEATHER_VARIABLES = ['windspeed_10m','winddirection_10m','cloudcover','surface_pressure','temperature_2m','precipitation','rain','terrestrial_radiation']
 
 # Quick-start development settings - unsuitable for production

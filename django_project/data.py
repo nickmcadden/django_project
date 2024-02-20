@@ -9,11 +9,94 @@ import lxml
 import plotly.express as px
 import plotly.graph_objects as go
 import time
+from datetime import timedelta
 from bs4 import BeautifulSoup
-
 
 location_geocode_data = settings.LOCATION_GEOCODE_DATA
 hourly_weather_variables = settings.HOURLY_WEATHER_VARIABLES
+ 
+def balance_non_carbon_generation(data, row_number, generation_type, excess):
+    if excess > data.iloc[row_number, data.columns.get_loc(generation_type)]:
+        remaining_excess = excess - data.iloc[row_number, data.columns.get_loc(generation_type)]
+        data.iloc[row_number, data.columns.get_loc(generation_type)] = 0
+    else:
+        remaining_excess = 0
+        data.iloc[row_number, data.columns.get_loc(generation_type)] = data.iloc[row_number, data.columns.get_loc(generation_type)] - excess
+    return data, remaining_excess
+
+
+def balance_carbon_generation(data, row_number, excess):
+    data.iloc[row_number, data.columns.get_loc('carbon')] = np.abs(excess)
+    remaining_excess = 0
+    return data, remaining_excess
+
+
+def create_scenerio_data(data, plan, group_by='month'):
+    renewable_sources = ['wind(offshore)', 'wind(onshore)', 'solar', 'hydro']
+    renewable_sources_plus_battery = ['wind(offshore)', 'wind(onshore)', 'solar', 'hydro', 'battery_supplied']
+    carbon_sources = ['coal', 'ccgt']
+    carbon = ['carbon']
+    other_sources = ['nuclear', 'biomass']
+    
+    # Calculate the new capacity
+    for column, capacity_multiplier in plan['capacity'].items():
+        data[column] = data[column] * capacity_multiplier
+    
+    # Set the battery storage capacity for this scenario
+    # The data is in half hour intervals. All power figures are in KWh. Show battery capacity by KW half hours (KWhh)
+    storage_capacity_GWhh = plan['storage_capacity_GWh'] * 1000 * 2
+    
+    data['battery_supplied'] = 0
+    data['wasted_GWhh'] = 0
+    
+    excess_data = np.array(data[renewable_sources + other_sources].sum(axis=1) - data['demand'])
+    stored_GWhh = 0
+    wasted_GWhh = []
+    battery_supplied = []
+    excess_generated = []
+    
+    for excess in np.nditer(excess_data):
+        if excess > 0:
+            excess_generated.append(excess)
+            battery_supplied.append(0)
+            stored_GWhh += excess
+            if stored_GWhh > storage_capacity_GWhh:
+                wasted_GWhh.append(-(stored_GWhh - storage_capacity_GWhh))
+                stored_GWhh = storage_capacity_GWhh
+            else:
+                wasted_GWhh.append(0)
+        elif stored_GWhh > np.abs(excess):
+            excess_generated.append(0)
+            wasted_GWhh.append(0)
+            battery_supplied.append(np.abs(excess))
+            stored_GWhh = stored_GWhh - np.abs(excess)
+        else:
+            excess_generated.append(excess + stored_GWhh)
+            wasted_GWhh.append(0)
+            battery_supplied.append(np.abs(stored_GWhh))
+            stored_GWhh = 0
+    
+    # Add all the hourly trade in excess production and release to the dataset
+    data['battery_supplied'] = battery_supplied
+    data['wasted_GWhh'] = wasted_GWhh
+    data['excess_generated'] = excess_generated
+    
+    # Default all carbon generation to 0 before calculating how much of this needs to be generated in the new scenario
+    data['carbon'] = 0
+    
+    # Adjust the balance of carbon and non carbon sources based on the new renewable scenario 
+    for i, excess in enumerate(data['excess_generated']):
+        if excess > 0:
+            # balance non carbon sources in order of precedence
+            for generation_type in ['nuclear', 'biomass', 'wind(offshore)', 'wind(onshore)']:
+                data, excess = balance_non_carbon_generation(data, i, generation_type, excess)
+                if excess == 0:
+                    break
+        else:
+            data, excess = balance_carbon_generation(data, i, excess)
+    
+    return data
+
 
 # Read and format the windspeed data recorded at different locations around the UK
 def format_windspeed_data(location, df):
@@ -38,13 +121,14 @@ def read_generation_training_data(start_date, generation_type):
 
 def read_training_data(generation_type):
     # make this a config setting
-    start_date='2022-08-01'
-    end_date=str(pd.Timestamp.today())[:10]
+    # start_date ='2022-08-01'
+    # Use only a year (or whole number of years) worth of data, so no one month is over-represented.
+    end_date = pd.Timestamp.today()
+    start_date = end_date - timedelta(days=365)
     windpowerdata = read_generation_training_data(start_date, generation_type)
-    historical_data_url = "https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date="+str(start_date)+"&end_date="+str(end_date)+"&hourly=" + ",".join(hourly_weather_variables)
+    historical_data_url = "https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date="+str(start_date)[:10]+"&end_date="+str(end_date)[:10]+"&hourly=" + ",".join(hourly_weather_variables)
     windspeeddata = {}
-    
-    for i, location in enumerate(location_geocode_data.items()):
+    for i, location in enumerate(location_geocode_data[generation_type].items()):
         data = requests.get(historical_data_url.format(lat=str(location[1][0]), lon=str(location[1][1])), verify=False)
         print('Reading data for', location[0], data.status_code)
         windspeeddata[i] = format_windspeed_data(location[0], pd.DataFrame(data.json()['hourly']))
@@ -53,11 +137,11 @@ def read_training_data(generation_type):
     windpowerdata.to_csv(os.path.join(settings.DATA_DIR, 'windpowerdata.csv'), index=False)
     return windpowerdata
 
-
+'''
 def read_forecast_data():
     forecast_data_url = "http://api.weatherapi.com/v1/forecast.json?key=c6d909ccb3044b41819172252232907&q={lat},{lon}&days=1"
     forecast_data = pd.DataFrame()
-    for i, location in enumerate(location_geocode_data.items()):
+    for i, location in enumerate(location_geocode_data[generation_type].items()):
         jsondata = requests.get(forecast_data_url.format(lat=str(location[1][0]), lon=str(location[1][1])))
         print(location[0], jsondata.status_code)
         forecast_temp = pd.DataFrame()
@@ -72,12 +156,12 @@ def read_forecast_data():
         forecast_data = forecast_data.merge(forecast_temp, on=['Date', 'Hour'])
     
     return forecast_data
+'''
 
-
-def read_forecast_data_old():
+def read_forecast_data_old(generation_type):
     forecast_data_url = 'https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={long}&past_days=92&forecast_days=10&hourly=' + ','.join(hourly_weather_variables)
     forecast_data = pd.DataFrame()
-    for i, location in enumerate(location_geocode_data.items()):
+    for i, location in enumerate(location_geocode_data[generation_type].items()):
         data = requests.get(forecast_data_url.format(lat=str(location[1][0]), long=str(location[1][1])), verify=False)
         print(location[0], data.status_code)
         forecast_temp = format_windspeed_data(location[0], pd.DataFrame(data.json()['hourly']))
@@ -89,7 +173,8 @@ def read_forecast_data_old():
         if len(forecast_data) == 0:
             forecast_data = forecast_temp[['Date', 'Hour']]
         forecast_data = forecast_data.merge(forecast_temp, on=['Date', 'Hour'])
-
+    
+    print(forecast_data)
     return forecast_data
 
 
@@ -180,6 +265,7 @@ def format_grid_data(grid_data):
 
 
 def read_power_generation_data():
+
     # Check if the historical data file is already saved to pickle and read
     ntn_data_base = pd.read_csv(os.path.join(settings.DATA_DIR, 'generation_half_hourly_ntn.csv'), parse_dates=['date'], index_col=False)
     grid_data_base = pd.read_csv(os.path.join(settings.DATA_DIR, 'generation_half_hourly_grid.csv'), parse_dates=['date'], index_col=False)
@@ -200,6 +286,7 @@ def read_power_generation_data():
     # Save the final data set with all the merged data
     generation_half_hourly = merge_power_generation_data(grid_data, ntn_data)    
     generation_half_hourly.to_csv(os.path.join(settings.DATA_DIR, 'generation_half_hourly.csv'), index=False)
-    #generation_half_hourly = pd.read_csv("generation_half_hourly.csv", parse_dates=['date'], index_col=False)
+
+    #generation_half_hourly = pd.read_csv(os.path.join(settings.DATA_DIR, 'generation_half_hourly.csv'), parse_dates=['date'], index_col=False)
     
     return generation_half_hourly
