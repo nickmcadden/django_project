@@ -286,6 +286,20 @@ def show_power_chart(data, period):
     return fig_go
 
 
+def show_forecast(forecast, datacolumns):
+    # Create a plot of the daily forecast vs recorded wind power
+    colours = ['lightgrey', 'lightsteelblue', 'lightslategrey', 'royalblue', 'green', 'cadetblue', 'mediumaquamarine', 'seagreen', 'lawngreen', 'blue']
+    fig = go.Figure()
+    for colour, location in enumerate(datacolumns):
+        print(colour, colours[colour], location)
+        fig.add_trace(go.Scatter(x=forecast["hour"], y=forecast[location], name = location, line=dict(color=colours[colour], width=1)))
+    fig.update_layout(title="Wind speed forecast " + pd.Timestamp.today().strftime("%A %d %B"), showlegend=True)
+    fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="left",x=0.99))
+    fig.update_xaxes(nticks=10)
+    fig.update_layout(hovermode="x unified")
+    return fig
+    
+    
 def show_forecast_vs_actual(grid_generation, generation_type, forecast_today):
     # Create a plot of the daily forecast vs recorded wind power
     fig = go.Figure()

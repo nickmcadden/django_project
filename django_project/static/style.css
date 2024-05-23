@@ -90,21 +90,31 @@ div #page-header h2 {
 	float: left;
 }
 
+.plan-overview {
+	margin: 0px 0px 100px 0px;
+}
+
 .data-table {
-	background-color: #ffffff;
+	margin: 0px 80px;
+	background-color: #e8ecf4;
     border-collapse: collapse;
 }
 
+.data-table th {
+	background-color: #ffffff;
+}
+
 .data-table, .data-table th, .data-table td {
-    border: 1px solid #ddd;
+    border: 1px solid #fff;
 	font-size: 10px;
 }
 
 .data-table th, .data-table td {
-    padding: 4px 4px;
+    padding: 10px 10px;
     text-align: left;
 }
 
-.data-table tr:nth-child(even) {
+/*.data-table tr:nth-child(even) {
     background-color: #f2f2f2;
-}
+}*/
+

@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import xgboost
 import pickle as pkl
+import h5py
 import os
 import datetime
 from django_project import data
@@ -13,7 +14,6 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import KFold
 from sklearn.metrics import mean_absolute_error
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-
 
 
 def transform_angle(a):
@@ -109,7 +109,7 @@ def cross_validate_and_fit_model(X, y, model, n_splits=5):
 def create_model(generation_type):
     if os.path.isfile(os.path.join(settings.DATA_DIR, 'ensemble_model_' + generation_type + '.pickle')):
         print("Saved model found")
-        ensemble_model = pkl.load(open(os.path.join(settings.DATA_DIR, 'ensemble_model_'+generation_type+'.pickle'), "rb"))
+        ensemble_model = pd.read_pickle(os.path.join(settings.DATA_DIR, 'ensemble_model_'+generation_type+'.pickle'))
         training_prediction = ensemble_model['data']
         scaler = ensemble_model['scaler']
         model_n = ensemble_model['model_n']
@@ -119,7 +119,7 @@ def create_model(generation_type):
         model_d = ensemble_model['model_d']
     else:
         # Test 3 types of predictive model
-        model_n = MLPRegressor(hidden_layer_sizes=(256, 256), activation='relu', solver='adam', random_state=42, max_iter=6000, verbose=False, learning_rate_init=0.1, alpha=0.01)
+        model_n = MLPRegressor(hidden_layer_sizes=(256, 256), activation='relu', solver='adam', random_state=42, max_iter=500, verbose=False, learning_rate_init=0.1, alpha=0.01)
         model_a = RandomForestRegressor(n_estimators=25, max_depth=12, min_samples_leaf=1)
         model_b = xgboost.XGBRegressor(tree_method="hist", eval_metric=mean_absolute_error, max_depth=12, min_child_weight=2)
         model_c = LinearRegression()
@@ -165,7 +165,8 @@ def save_forecast(forecast, generation_type):
     forecast['Generation_type'] = generation_type
     if os.path.isfile(os.path.join(settings.DATA_DIR, 'saved_forecasts.pickle')):
         print("Saved forecasts found")
-        saved_forecasts = pkl.load(open(os.path.join(settings.DATA_DIR, 'saved_forecasts.pickle'), "rb"))
+        saved_forecasts = pd.read_pickle(os.path.join(settings.DATA_DIR, 'saved_forecasts.pickle'))
+        #saved_forecasts = pkl.load(open(os.path.join(settings.DATA_DIR, 'saved_forecasts.pickle'), "rb"))
         saved_forecasts = pd.concat([saved_forecasts, forecast])
     else:
         print("Saving Forecast")
@@ -211,7 +212,7 @@ def create_forecast(generation_type):
         X = create_features(forecast_data, model_d, generation_type)
         X = np.append(X, forecast[['Forecast_0', 'Forecast_1', 'Forecast_2', 'Forecast_3']].values, axis=1)
         forecast['Forecast_Stack'] = model_d.predict(X)
-        
+             
         # Create Ensemble Forecast
         forecast['Forecast_Ensemble'] = forecast['Forecast_0'] * 0.4 + \
                                         forecast['Forecast_1'] * 0.4 + \

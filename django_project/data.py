@@ -1,7 +1,6 @@
 from django.conf import settings
 import pandas as pd
 import numpy as np
-import sqlite3 as sql
 import requests as requests
 import os
 import pickle as pkl
@@ -14,7 +13,8 @@ from bs4 import BeautifulSoup
 
 location_geocode_data = settings.LOCATION_GEOCODE_DATA
 hourly_weather_variables = settings.HOURLY_WEATHER_VARIABLES
- 
+
+
 def balance_non_carbon_generation(data, row_number, generation_type, excess):
     if excess > data.iloc[row_number, data.columns.get_loc(generation_type)]:
         remaining_excess = excess - data.iloc[row_number, data.columns.get_loc(generation_type)]

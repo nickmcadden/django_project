@@ -68,11 +68,18 @@ def model_view(request):
     # Get the grid generation data
     grid_generation = data.read_power_generation_data()
     # Filter to the time period for the forecast data (which also contains a historical forecast)
-    
     grid_generation = grid_generation.copy()[grid_generation['date']>=start_date]
     
     # Create a new data set at the daily level
     grid_generation_daily = grid_generation.copy().groupby('date').mean().reset_index()
+    
+    test = grid_generation_daily.merge(format_model_data(forecast_wind_offshore), left_on='date', right_on='Date')
+    test = test[['date', 'Forecast_Ensemble', 'wind(offshore)']]
+    test['throttled'] = test['Forecast_Ensemble'] - test['wind(offshore)']
+    test.to_csv('throttle_estimates.csv')
+    test['month'] = test['date'].to_numpy().astype('datetime64[M]')
+    test_monthly = test.copy().groupby('month').mean().reset_index()
+    test_monthly.to_csv('throttle_estimates_monthly.csv')
     
     # Convert the figure to an HTML div string
     fig_model_evaluation = visualisations.show_model_evaluation(grid_generation_daily, 'wind(offshore)', format_model_data(forecast_wind_offshore))
@@ -97,26 +104,69 @@ def model_view(request):
     
     # Send all the generated html to the template
     return all_page_content
+    
+
+def windspeed_view(request):
+    # Get the latest forecast data
+    offshore_windspeed_columns = [i+'_windspeed_10m' for i in list(settings.LOCATION_GEOCODE_DATA['wind(offshore)'].keys())]
+    onshore_windspeed_columns = [i+'_windspeed_10m' for i in list(settings.LOCATION_GEOCODE_DATA['wind(onshore)'].keys())]
+    solar_cloudcover_columns = [i+'_cloudcover' for i in list(settings.LOCATION_GEOCODE_DATA['solar'].keys())]
+    
+    forecast_offshore = data.read_forecast_data_old('wind(offshore)')
+    forecast_onshore = data.read_forecast_data_old('wind(onshore)')
+    forecast_solar = data.read_forecast_data_old('solar')
+
+    forecast_offshore = forecast_offshore.copy()[forecast_offshore['Date']>=pd.Timestamp.today().floor('D')]
+    forecast_onshore = forecast_onshore.copy()[forecast_onshore['Date']>=pd.Timestamp.today().floor('D')]
+    forecast_solar = forecast_solar.copy()[forecast_solar['Date']>=pd.Timestamp.today().floor('D')]
+    
+    forecast_offshore['hour'] = forecast_offshore['Date'] + pd.to_timedelta((forecast_offshore['Hour']), unit='h')
+    forecast_onshore['hour'] = forecast_offshore['Date'] + pd.to_timedelta((forecast_offshore['Hour']), unit='h')
+    forecast_solar['hour'] = forecast_offshore['Date'] + pd.to_timedelta((forecast_offshore['Hour']), unit='h')
+    
+    print(forecast_offshore)
+    
+    # Show the offshore wind forecasts and model comparison
+    fig_forecast = visualisations.show_forecast(forecast_offshore, offshore_windspeed_columns)
+    wind_offshore_forecast_actual = pio.to_html(fig_forecast, full_html=False, default_width='1200px')
+    
+    # Show the onshore wind forecasts abd model comparison
+    fig_forecast = visualisations.show_forecast(forecast_onshore, onshore_windspeed_columns)
+    wind_onshore_forecast_actual = pio.to_html(fig_forecast, full_html=False, default_width='1200px')
+    
+    # Show the solar forecasts and model comparison
+    fig_forecast = visualisations.show_forecast(forecast_solar, solar_cloudcover_columns)
+    solar_forecast_actual = pio.to_html(fig_forecast, full_html=False, default_width='1200px')
+    
+    all_page_content = render(request, 'index.html', {'wind_offshore_forecast_actual': wind_offshore_forecast_actual,
+                                        'wind_onshore_forecast_actual': wind_onshore_forecast_actual,
+                                        'solar_forecast_actual': solar_forecast_actual})
+    
+    # Send all the generated html to the template
+    return all_page_content
+
 
 # To Do (apply a colour change or transparency affect to this year's bar to show it's a projection not actual to date)
 def add_current_year_projection(grid_generation):
     # Remove last years data between equivalent date (today year year ago) and end of that year
     today_last_year = pd.Timestamp.today() - pd.DateOffset(years=1)
     grid_generation_temp = grid_generation.copy()[grid_generation['date'] < today_last_year]
-    grid_generation_temp = grid_generation_temp.append(grid_generation.copy()[(grid_generation['date'] >= '2024-01-01') & (grid_generation['date'] < pd.Timestamp.today())])
+    #grid_generation_temp = grid_generation_temp.append(grid_generation.copy()[(grid_generation['date'] >= '2024-01-01') & (grid_generation['date'] < pd.Timestamp.today())])
+    grid_generation_temp = pd.concat([grid_generation_temp, grid_generation.copy()[(grid_generation['date'] >= '2024-01-01') & (grid_generation['date'] < pd.Timestamp.today())]])
     
     # Aggregate yearly
     grid_generation_yearly = grid_generation_temp.copy().groupby('year').mean().reset_index()
     
     # create multiplier for the projection (this year's yearly aggregate / last years)
-    grid_generation = grid_generation.set_index(['date'])
+    grid_generation_yearly = grid_generation_yearly.set_index(['date','month'])
     this_year = grid_generation_yearly.copy()[grid_generation_yearly['year']==pd.Timestamp.today().year]
     last_year = grid_generation_yearly.copy()[grid_generation_yearly['year']==pd.Timestamp.today().year-1]
     
+    print(pd.DataFrame({'vars':this_year.columns, 'this_year':this_year.to_numpy().squeeze(), 'last_year':last_year.to_numpy().squeeze()}))
     multipliers = this_year.to_numpy() / last_year.to_numpy()
     
     # Aggregate yearly with all data
-    grid_generation_yearly = grid_generation[grid_generation['year']<=pd.Timestamp.today().year].copy().groupby('year').mean().reset_index()
+    grid_generation_yearly = grid_generation[grid_generation['year']<=pd.Timestamp.today().year].copy().groupby('year').mean().reset_index().set_index(['date','month'])
     # Get last year's totals to base the projection on
     last_year = grid_generation_yearly.copy()[grid_generation_yearly['year']==pd.Timestamp.today().year-1]
     # Apply new projection
@@ -146,6 +196,7 @@ def map_view(request):
     
     # Get the grid generation data
     grid_generation = data.read_power_generation_data()
+    grid_generation['demand'] = grid_generation.sum(axis=1, numeric_only=True)
     
     # Get all the grid generation data at a daily level
     grid_generation['month'] = grid_generation['date'].to_numpy().astype('datetime64[M]')
@@ -231,4 +282,4 @@ To Do:
 Random Bloomsbury group generator
 Random Pyjama party generator
 '''
-                                          
+            
