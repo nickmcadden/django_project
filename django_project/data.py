@@ -14,7 +14,6 @@ from bs4 import BeautifulSoup
 location_geocode_data = settings.LOCATION_GEOCODE_DATA
 hourly_weather_variables = settings.HOURLY_WEATHER_VARIABLES
 
-
 def balance_non_carbon_generation(data, row_number, generation_type, excess):
     if excess > data.iloc[row_number, data.columns.get_loc(generation_type)]:
         remaining_excess = excess - data.iloc[row_number, data.columns.get_loc(generation_type)]
@@ -190,53 +189,42 @@ def merge_power_generation_data(grid_data, ntn_data):
     return data
 
 
-def xml_to_dataframe(xml, xpath):    
-    root = lxml.etree.fromstring(xml)
-
-    # This XPath specifically targets <item> tags that are direct children of <responseList> tags.
-    items = root.xpath('//responseList/item')
-    data = []
-
-    for item in items:
-        row_data = {}
-        for child in item.getchildren():
-            row_data[child.tag] = child.text
-        data.append(row_data)
-    data=pd.DataFrame(data)
-    data['startTimeOfHalfHrPeriod'] = data['startTimeOfHalfHrPeriod'].astype('datetime64[ns]')
-    data['settlementPeriod'] = data['settlementPeriod'].astype(np.int64)
-    
-    return pd.DataFrame(data)
-
-
 def update_data(base, update):
     # This will combine two data sets with the same column structure
     # Any existing rows will be replaced based on a match with the index
+    update['date'] = update['date'].astype('datetime64[ns]')
     base.set_index(['date', 'period'], inplace=True)
     update.set_index(['date', 'period'], inplace=True)
-    data = update.combine_first(base)
-    return data.reset_index()
+    data = update.combine_first(base).reset_index()
+    return data
 
 
 def format_ntn_data(ntn_data):
-    data_mapping_ntn_columns = {'startTimeOfHalfHrPeriod': 'date',
+    ntn_data = ntn_data.decode("utf-8")
+    if (ntn_data[0] == '[') & (ntn_data[-1] == ']'):
+        ntn_data = pd.DataFrame(eval(ntn_data))
+    ntn_data = ntn_data.drop(columns=['startTime', 'dataset'])
+    ntn_data = ntn_data.groupby(['settlementDate', 'settlementPeriod', 'fuelType']).agg({'generation':'mean'}).reset_index()
+    ntn_data['generation'] = ntn_data['generation'].astype(int)
+    ntn_data = ntn_data.pivot(index=['settlementDate', 'settlementPeriod'], columns='fuelType', values='generation').reset_index()
+    data_mapping_ntn_columns = {'settlementDate': 'date',
                     'settlementPeriod': 'period',
-                    'coal': 'coal',
-                    'ccgt': 'ccgt',
-                    'ocgt': 'ocgt',
-                    'nuclear': 'nuclear',
-                    'oil': 'oil',
-                    'wind': 'wind(offshore)',
-                    'npshyd': 'hydro',
-                    'ps': 'pumped',
-                    'biomass': 'biomass',
-                    'other': 'other'}
-    
+                    'COAL': 'coal',
+                    'CCGT': 'ccgt',
+                    'OCGT': 'ocgt',
+                    'NUCLEAR': 'nuclear',
+                    'OIL': 'oil',
+                    'WIND': 'wind(offshore)',
+                    'NPSHYD': 'hydro',
+                    'PS': 'pumped',
+                    'BIOMASS': 'biomass',
+                    'OTHER': 'other'}
     # order ntn data in key order
     ntn_data = ntn_data[list(data_mapping_ntn_columns.keys())]
     # give the data the new column names
     ntn_data.columns = list(data_mapping_ntn_columns.values())
-    #ntn_data['date'] = ntn_data['date'].apply(lambda x: str(x)[:4] + str(x)[4:6] + str(x)[6:8]).astype('datetime64[ns]')
+    #ntn_data['date'] = ntn_data['date'].astype('datetime64[ns]')
+    ntn_data.to_csv('test.csv', index=False)
     return ntn_data
 
 
@@ -265,13 +253,15 @@ def format_grid_data(grid_data):
 
 
 def read_power_generation_data():
-
     # Check if the historical data file is already saved to pickle and read
-    ntn_data_base = pd.read_csv(os.path.join(settings.DATA_DIR, 'generation_half_hourly_ntn.csv'), parse_dates=['date'], index_col=False)
-    grid_data_base = pd.read_csv(os.path.join(settings.DATA_DIR, 'generation_half_hourly_grid.csv'), parse_dates=['date'], index_col=False)
+    ntn_data_base = pd.read_csv(os.path.join('data', 'generation_half_hourly_ntn.csv'), parse_dates=['date'], index_col=False)
+    grid_data_base = pd.read_csv(os.path.join('data', 'generation_half_hourly_grid.csv'), parse_dates=['date'], index_col=False)
     
     # Call the external data for the updates to the ntn and grid data
-    ntn_data = xml_to_dataframe(requests.get("https://www.bmreports.com/bmrs/?q=ajax/xml_download/FUELHH/xml/").content, "//responseList/item")
+    end_date = pd.Timestamp.today()
+    start_date = end_date - timedelta(days=10)
+    
+    ntn_data = requests.get("https://data.elexon.co.uk/bmrs/api/v1/datasets/FUELINST/stream?publishDateTimeFrom="+str(start_date)+"&publishDateTimeTo="+str(end_date)).content
     ntn_data = format_ntn_data(ntn_data)
     
     grid_data = pd.read_csv("https://data.nationalgrideso.com/backend/dataset/7a12172a-939c-404c-b581-a6128b74f588/resource/177f6fa4-ae49-4182-81ea-0c6b35f26ca6/download/demanddataupdate.csv", parse_dates=['SETTLEMENT_DATE'])
@@ -279,13 +269,13 @@ def read_power_generation_data():
     
     # Add the new data to the base data for each set
     ntn_data = update_data(ntn_data_base, ntn_data)
-    ntn_data.to_csv(os.path.join(settings.DATA_DIR, 'generation_half_hourly_ntn.csv'), index=False)
+    ntn_data.to_csv(os.path.join('data', 'generation_half_hourly_ntn.csv'), index=False)
     grid_data = update_data(grid_data_base, grid_data)
-    grid_data.to_csv(os.path.join(settings.DATA_DIR, 'generation_half_hourly_grid.csv'), index=False)
+    grid_data.to_csv(os.path.join('data', 'generation_half_hourly_grid.csv'), index=False)
     
     # Save the final data set with all the merged data
     generation_half_hourly = merge_power_generation_data(grid_data, ntn_data)    
-    generation_half_hourly.to_csv(os.path.join(settings.DATA_DIR, 'generation_half_hourly.csv'), index=False)
+    generation_half_hourly.to_csv(os.path.join('data', 'generation_half_hourly.csv'), index=False)
 
     #generation_half_hourly = pd.read_csv(os.path.join(settings.DATA_DIR, 'generation_half_hourly.csv'), parse_dates=['date'], index_col=False)
     
